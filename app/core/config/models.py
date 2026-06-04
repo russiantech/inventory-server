@@ -5,6 +5,7 @@ from typing import Optional
 
 
 class AppSettings(BaseSettings):
+    
     # Security
     auth_jwt_secret_key: str = Field("changeme", alias="APP_AUTH_JWT_SECRET_KEY")
     jwt_algorithm: str = Field("HS256", alias="APP_JWT_ALGORITHM")
@@ -19,7 +20,7 @@ class AppSettings(BaseSettings):
     frontend_url: str = Field("http://localhost:5173", alias="APP_FRONTEND_URL")
     filesystem_base_path: str = Field("./uploads", alias="APP_FILESYSTEM_BASE_PATH")
     development_mode: bool = Field(True, alias="APP_DEVELOPMENT_MODE")
-    port: int = Field(8000, alias="APP_PORT")
+    port: int = Field(8002, alias="APP_PORT")
     domain: str = Field("localhost", alias="APP_DOMAIN")
 
     # Database

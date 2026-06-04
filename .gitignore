@@ -98,8 +98,8 @@ logs/
 *.db-journal
 
 # Migrations and Alembic
-alembic/versions/
-migrations/
+# alembic/versions/
+# migrations/
 
 # Docker
 *.env.*.local
