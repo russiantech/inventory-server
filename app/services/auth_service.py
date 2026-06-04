@@ -1,0 +1,56 @@
+# app/services/auth_service.py
+import logging
+from sqlalchemy import or_
+from sqlalchemy.orm import Session
+
+from app.models.user import User
+from app.models.rbac import Role
+
+logger = logging.getLogger(__name__)
+
+
+def authenticate_user(db: Session, email: str, password: str):
+    """Authenticate by email or username + password."""
+    user = db.query(User).filter(
+        or_(User.email == email, User.username == email),
+        User.deleted == False,
+    ).first()
+    if not user:
+        return None
+    if not user.check_password(password):
+        return None
+    return user
+
+
+def create_user(db: Session, username: str, email: str, password: str, names: str = None, phone: str = None) -> User:
+    """Create a new user and assign default 'staff' role."""
+    user = User(
+        username=username.strip().lower(),
+        email=email.strip().lower(),
+        names=names,
+        phone=phone,
+    )
+    user.set_password(password)
+
+    # Assign default role
+    default_role = db.query(Role).filter(Role.name == "staff").first()
+    if not default_role:
+        default_role = Role(name="staff", description="Default staff role", is_default=True)
+        db.add(default_role)
+        db.flush()
+
+    user.roles.append(default_role)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def get_or_create_role(db: Session, name: str, description: str = None) -> Role:
+    role = db.query(Role).filter(Role.name == name).first()
+    if not role:
+        role = Role(name=name, description=description or name)
+        db.add(role)
+        db.commit()
+        db.refresh(role)
+    return role

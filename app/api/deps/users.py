@@ -1,0 +1,79 @@
+# app/api/deps/users.py
+import logging
+from fastapi import Depends, HTTPException, status, Cookie
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy.orm import Session
+from typing import Optional
+
+from app.db.session import SessionLocal
+from app.core.security.auth import decode_token
+from app.models.user import User
+
+security = HTTPBearer(auto_error=False)
+logger = logging.getLogger(__name__)
+
+
+async def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+async def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: Session = Depends(get_db),
+) -> User:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    if not credentials:
+        raise credentials_exception
+
+    payload = decode_token(credentials.credentials)
+    if not payload:
+        raise credentials_exception
+
+    user_id: str = payload.get("sub")
+    if not user_id:
+        raise credentials_exception
+
+    from uuid import UUID
+    try:
+        uid = UUID(user_id)
+    except ValueError:
+        raise credentials_exception
+
+    user = db.query(User).filter(User.id == uid, User.deleted == False).first()
+    if not user:
+        raise credentials_exception
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is inactive")
+    return user
+
+
+async def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
+    if not current_user.is_active:
+        raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
+
+
+async def admin_required(current_user: User = Depends(get_current_user)) -> User:
+    if not current_user.has_role("admin", "super_admin", "manager"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin privileges required"
+        )
+    return current_user
+
+
+async def manager_required(current_user: User = Depends(get_current_user)) -> User:
+    if not current_user.has_role("admin", "super_admin", "manager"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager or Admin privileges required"
+        )
+    return current_user
