@@ -33,7 +33,7 @@ from app.core.config import get_settings
 # ─────────────────────────────────────────────────────────────────────────────
 
 settings = get_settings()
-print(f"Loaded settings: {settings.dict()}")
+# print(f"Loaded settings: {settings.dict()}")
 
 LOG_LEVEL = logging.DEBUG if settings.development_mode else logging.INFO
 LOG_DIR = "logs"
@@ -122,8 +122,8 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
+    redirect_slashes=False,  # Optional: prevents automatic redirect from /endpoint to /endpoint/
 )
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Static Files

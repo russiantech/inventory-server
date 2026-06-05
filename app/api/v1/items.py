@@ -31,7 +31,7 @@ async def list_items(
 async def create_item(
     data: ItemCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "super_admin", "manager")),
+    current_user: User = Depends(require_roles("admin", "super_admin", "manager", "staff")),
 ):
     payload = data.model_dump()
     item = inventory_service.create_item(db, data=payload, user_id=current_user.id)
@@ -61,7 +61,7 @@ async def update_item(
     item_id: str,
     data: ItemUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "super_admin", "manager")),
+    current_user: User = Depends(require_roles("admin", "super_admin", "manager", "staff")),
 ):
     item = inventory_service.get_item(db, item_id)
     if not item:
