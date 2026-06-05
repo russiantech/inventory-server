@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/", summary="Get inventory/sales/profit report")
+@router.get("", summary="Get inventory/sales/profit report")
 async def report(
     period: str = "daily",
     year: int = None,

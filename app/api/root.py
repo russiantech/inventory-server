@@ -7,7 +7,7 @@ root_router = APIRouter()
 settings = get_settings()
 
 
-@root_router.get("/", tags=["Root"])
+@root_router.get("", tags=["Root"])
 async def root():
     return api_response(True, f"{settings.site_name} API is running.", data={"version": settings.api_version})
 

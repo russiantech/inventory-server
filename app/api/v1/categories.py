@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/", summary="List all categories")
+@router.get("", summary="List all categories")
 async def list_categories(
     request: Request,
     dept: str = None,
@@ -25,7 +25,7 @@ async def list_categories(
     return PageSerializer(request, obj=cats, resource_name="categories").get_response("Categories fetched.")
 
 
-@router.post("/", summary="Create a category [admin/manager]", status_code=201)
+@router.post("", summary="Create a category [admin/manager]", status_code=201)
 async def create_category(
     data: CategoryCreate,
     db: Session = Depends(get_db),

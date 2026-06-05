@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/", summary="List all inventory items")
+@router.get("", summary="List all inventory items")
 async def list_items(
     request: Request,
     dept: str = None,
@@ -27,7 +27,7 @@ async def list_items(
     return PageSerializer(request, obj=items, resource_name="items").get_response("Items fetched.")
 
 
-@router.post("/", summary="Create a new product [manager/admin]", status_code=201)
+@router.post("", summary="Create a new product [manager/admin]", status_code=201)
 async def create_item(
     data: ItemCreate,
     db: Session = Depends(get_db),

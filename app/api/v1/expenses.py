@@ -28,7 +28,7 @@ class ExpenseCreateSchema(BaseModel):
         return v
 
 
-@router.get("/", summary="List expenses [manager/admin]",
+@router.get("", summary="List expenses [manager/admin]",
             dependencies=[Depends(require_roles("admin", "super_admin", "manager"))])
 async def list_expenses(
     request: Request,
@@ -39,7 +39,7 @@ async def list_expenses(
     return PageSerializer(request, obj=expenses, resource_name="expenses").get_response("Expenses fetched.")
 
 
-@router.post("/", summary="Record an expense [manager/admin]", status_code=201)
+@router.post("", summary="Record an expense [manager/admin]", status_code=201)
 async def create_expense(
     data: ExpenseCreateSchema,
     db: Session = Depends(get_db),

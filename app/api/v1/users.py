@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/", summary="List all users [admin only]", dependencies=[Depends(require_roles("admin", "super_admin"))])
+@router.get("", summary="List all users [admin only]", dependencies=[Depends(require_roles("admin", "super_admin"))])
 async def list_users(request: Request, db: Session = Depends(get_db)):
     users = db.query(User).filter(User.deleted == False).order_by(User.created_at.desc()).all()
     return PageSerializer(request, obj=users, resource_name="users").get_response("Users fetched.")

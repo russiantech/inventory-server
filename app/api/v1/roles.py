@@ -20,13 +20,13 @@ class RoleCreate(BaseModel):
     is_default: bool = False
 
 
-@router.get("/", summary="List all roles [admin]", dependencies=[Depends(require_roles("admin", "super_admin"))])
+@router.get("", summary="List all roles [admin]", dependencies=[Depends(require_roles("admin", "super_admin"))])
 async def list_roles(db: Session = Depends(get_db)):
     roles = db.query(Role).order_by(Role.name).all()
     return api_response(True, "Roles fetched.", data=[r.get_summary() for r in roles])
 
 
-@router.post("/", summary="Create role [admin]", dependencies=[Depends(require_roles("admin", "super_admin"))], status_code=201)
+@router.post("", summary="Create role [admin]", dependencies=[Depends(require_roles("admin", "super_admin"))], status_code=201)
 async def create_role(data: RoleCreate, db: Session = Depends(get_db)):
     existing = db.query(Role).filter(Role.name == data.name).first()
     if existing:
