@@ -22,15 +22,44 @@ def authenticate_user(db: Session, email: str, password: str):
     return user
 
 
-def create_user(db: Session, username: str, email: str, password: str, names: str = None, phone: str = None) -> User:
-    """Create a new user and assign default 'staff' role."""
+# def create_user(db: Session, username: str, email: str, password: str, names: str = None, phone: str = None) -> User:
+#     """Create a new user and assign default 'staff' role."""
+#     user = User(
+#         username=username.strip().lower(),
+#         email=email.strip().lower(),
+#         names=names,
+#         phone=phone,
+#     )
+#     user.set_password(password)
+
+def create_user(
+    db: Session,
+    username: str,
+    email: str,
+    password: str = None,
+    names: str = None,
+    phone: str = None,
+    organization_id=None,
+    is_org_admin: bool = False,
+    role: str = "staff",
+    email_verified: bool = False,
+    password_hash: str = None,
+) -> User:
     user = User(
         username=username.strip().lower(),
         email=email.strip().lower(),
         names=names,
         phone=phone,
+        organization_id=organization_id,
+        is_org_admin=is_org_admin,
+        email_verified=email_verified,
     )
-    user.set_password(password)
+    if password_hash:
+        user.password = password_hash
+    elif password:
+        user.set_password(password)
+    else:
+        raise ValueError("Either password or password_hash is required")
 
     # Assign default role
     default_role = db.query(Role).filter(Role.name == "staff").first()

@@ -32,6 +32,14 @@ class Items(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     photos: Mapped[Optional[list]] = mapped_column(JSON)
 
     # FK
+    # organization_id: Mapped[Optional[UUID]] = mapped_column(
+    #     UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True
+    # )
+    organization_id: Mapped[UUID] = mapped_column(
+    UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    organization = relationship("Organization", backref="items")
+
     category_id: Mapped[UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("categories.id", ondelete="RESTRICT"), nullable=False
     )
@@ -60,6 +68,7 @@ class Items(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
             "sku": self.sku,
             "desc": self.desc,
             "dept": self.dept,
+            "organization_id": str(self.organization_id),
             "c_price": float(self.c_price) if self.c_price else None,
             "s_price": float(self.s_price),
             "initial_stock": self.initial_stock,

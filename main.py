@@ -33,7 +33,7 @@ from app.core.config import get_settings
 # ─────────────────────────────────────────────────────────────────────────────
 
 settings = get_settings()
-# print(f"Loaded settings: {settings.dict()}")
+print(f"Loaded settings: {settings.dict()}")
 
 LOG_LEVEL = logging.DEBUG if settings.development_mode else logging.INFO
 LOG_DIR = "logs"
@@ -82,6 +82,7 @@ async def lifespan(app: FastAPI):
         from app.models.rbac import Role
 
         db = SessionLocal()
+        
         default_roles = [
             ("super_admin", "Full system access"),
             ("admin", "Administrative access"),
@@ -98,9 +99,26 @@ async def lifespan(app: FastAPI):
                     is_default=(name == "staff")
                 ))
 
+        from app.models.category import Category
+        
+        default_categories = [
+            ("Snacks & Beverages", "Snacks and beverages"),
+            ("Accessories & Electronics", "Electronic items"),
+            ("Laundry, Clothing & Apparel", "Clothing and apparel"),
+            # ("Home & Living", "Home and living products"),
+        ]
+
+        for name, desc in default_categories:
+            exists = db.query(Category).filter(Category.name == name).first()
+            if not exists:
+                db.add(Category(
+                    name=name,
+                    desc=desc
+                ))
+
         db.commit()
         db.close()
-        logger.info("Default roles seeded.")
+        logger.info("Default roles and categories seeded.")
 
     except Exception as e:
         logger.warning("Role seeding skipped: %s", e)
@@ -179,8 +197,12 @@ elif not isinstance(_cors_origins, list):
     _cors_origins = []
 
 # Base origins: always include localhost for dev
-_base_origins = ["http://localhost:5173", "http://localhost:3000"]
-
+_base_origins = [
+    "http://localhost:5173", 
+    "http://localhost:3000", 
+    "https://inventory.dunistech.ng", 
+    "https://www.inventory.dunistech.ng"
+]
 # Add the configured frontend_url if present and not already included
 if settings.frontend_url and settings.frontend_url not in _base_origins:
     _base_origins.append(settings.frontend_url)

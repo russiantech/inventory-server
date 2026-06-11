@@ -752,6 +752,7 @@ def get_report(
     item_id=None,
     dept: str = None,
     include_expenses: bool = True,
+    organization_id: str = None,
 ):
     p = "custom" if (start and end) else period
     s_dt, e_dt = _date_range(p, year=year, month=month, start=start, end=end)
@@ -767,6 +768,8 @@ def get_report(
         sq = sq.filter(Sales.item_id == item_id)
     if dept:
         sq = sq.filter(Sales.dept == dept)
+    if organization_id:
+        sq = sq.filter(Sales.organization_id == organization_id)
     sales_rows = sq.order_by(desc(Sales.sale_date)).all()
 
     total_revenue = sum(float(s.total_price) for s in sales_rows)
@@ -805,6 +808,8 @@ def get_report(
     )
     if item_id:
         stq = stq.filter(StockHistory.item_id == item_id)
+    if organization_id:
+        stq = stq.filter(StockHistory.organization_id == organization_id) 
     stock_rows = stq.all()
     total_stock_in = sum(s.quantity_in for s in stock_rows)
 
@@ -820,6 +825,8 @@ def get_report(
         iq = iq.filter(Items.id == item_id)
     if dept:
         iq = iq.filter(Items.dept == dept)
+    if organization_id:
+        iq = iq.filter(Items.organization_id == organization_id) 
     inventory_items = iq.all()
     total_current_stock = sum(i.in_stock for i in inventory_items)
     inventory_value_cost = sum((float(i.c_price) if i.c_price else 0) * i.in_stock for i in inventory_items)
@@ -836,6 +843,8 @@ def get_report(
         )
         if dept:
             eq = eq.filter(Expenses.dept == dept)
+        if organization_id:
+            eq = eq.filter(Expenses.organization_id == organization_id)
         expenses_rows = eq.all()
         total_expenses = sum(float(e.cost) for e in expenses_rows)
 
@@ -871,6 +880,7 @@ def get_product_detail_report_0(
     period: str = "monthly",
     year: int = None, month: int = None,
     start: str = None, end: str = None,
+    organization_id: str = None,
 ):
     """Detailed report for a single product within a date range."""
     from app.services.inventory_service import get_item
@@ -887,6 +897,7 @@ def get_product_detail_report_0(
         Sales.deleted == False,
         Sales.sale_date >= s_dt,
         Sales.sale_date < e_dt,
+        Sales.organization_id == organization_id if organization_id else True,
     ).order_by(desc(Sales.sale_date)).all()
 
     non_void_sales = [s for s in sales if not s.is_void]
@@ -929,6 +940,7 @@ def get_product_detail_report(
     period: str = "monthly",
     year: int = None, month: int = None,
     start: str = None, end: str = None,
+    organization_id: str = None,
 ):
     from app.services.inventory_service import get_item
     item = get_item(db, item_id)
@@ -943,6 +955,7 @@ def get_product_detail_report(
         Sales.deleted == False,
         Sales.sale_date >= s_dt,
         Sales.sale_date < e_dt,
+        Sales.organization_id == organization_id if organization_id else True,
     ).order_by(desc(Sales.sale_date)).all()
 
     # Defensive: Sales model may not have is_void
@@ -957,6 +970,7 @@ def get_product_detail_report(
         StockHistory.deleted == False,
         StockHistory.date_in >= s_dt,
         StockHistory.date_in < e_dt,
+        StockHistory.organization_id == organization_id if organization_id else True,
     ).order_by(desc(StockHistory.date_in)).all()
     total_stock_in = sum(h.quantity_in for h in stock_history if not getattr(h, 'is_reversal', False))
 
@@ -973,6 +987,7 @@ def get_product_detail_report(
             "current_stock": item.in_stock,
             "transactions": len(non_void_sales),
             "avg_unit_price": avg_price,
+            "organization_id": organization_id,
         },
         "sales": [s.get_summary() for s in sales],
         "stock_history": [h.get_summary() for h in stock_history],

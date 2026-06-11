@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, field_validator
 from typing import Optional
 
-from app.api.deps.users import get_db, get_current_user
+from app.api.deps.users import _get_org_id, get_db, get_current_user
 from app.api.deps.rbac import require_roles
 from app.models.user import User
 from app.services import inventory_service
@@ -21,6 +21,8 @@ class SaleCreateSchema(BaseModel):
     unit_price: float
     dept: str = "general"
     comment: Optional[str] = None
+    # organization_id intentionally removed — derived server-side from the
+    # authenticated user; clients must never supply it.
 
     @field_validator("qty_sold")
     @classmethod
@@ -39,9 +41,10 @@ class SaleCreateSchema(BaseModel):
 
 class SaleUpdateSchema(BaseModel):
     comment: Optional[str] = None
+    # organization_id intentionally removed — derived server-side
 
 
-@router.get("", summary="List all sales")
+@router.get("/", summary="List all sales")
 async def list_sales(
     request: Request,
     item_id: str = None,
@@ -49,27 +52,36 @@ async def list_sales(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    org_id = _get_org_id(current_user)
     # Staff only see their own sales; managers/admins see all
     uid = None if current_user.has_role("admin", "super_admin", "manager") else current_user.id
-    sales = inventory_service.get_sales(db, item_id=item_id, dept=dept, user_id=uid)
+    sales = inventory_service.get_sales(db, item_id=item_id, dept=dept, user_id=uid, organization_id=org_id)
     return PageSerializer(request, obj=sales, resource_name="sales").get_response("Sales fetched.")
 
 
-@router.post("", summary="Record a sale", status_code=201)
+@router.post("/", summary="Record a sale", status_code=201)
 async def create_sale(
     data: SaleCreateSchema,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    org_id = _get_org_id(current_user)
+
+    # Verify the item exists and belongs to this organisation
+    item = inventory_service.get_item(db, data.item_id)
+    if not item or str(item.organization_id) != org_id:
+        return api_response(False, "Item not found.", status_code=404)
+
     try:
         sale = inventory_service.create_sale(
             db,
             item_id=data.item_id,
             qty_sold=data.qty_sold,
             unit_price=data.unit_price,
-            user_id=current_user.id,
+            user_id=str(current_user.id),
             dept=data.dept,
             comment=data.comment,
+            organization_id=org_id,
         )
         return api_response(
             True,
@@ -87,7 +99,8 @@ async def get_sale(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    sale = inventory_service.get_sale(db, sale_id)
+    org_id = _get_org_id(current_user)
+    sale = inventory_service.get_sale(db, sale_id, organization_id=org_id)
     if not sale:
         return api_response(False, "Sale not found.", status_code=404)
     return api_response(True, "Sale fetched.", data=sale.get_summary())
@@ -100,7 +113,8 @@ async def update_sale(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "super_admin", "manager")),
 ):
-    sale = inventory_service.get_sale(db, sale_id)
+    org_id = _get_org_id(current_user)
+    sale = inventory_service.get_sale(db, sale_id, organization_id=org_id)
     if not sale:
         return api_response(False, "Sale not found.", status_code=404)
     if data.comment is not None:
@@ -116,10 +130,11 @@ async def void_sale(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "super_admin")),
 ):
-    sale = inventory_service.get_sale(db, sale_id)
+    org_id = _get_org_id(current_user)
+    sale = inventory_service.get_sale(db, sale_id, organization_id=org_id)
     if not sale:
         return api_response(False, "Sale not found.", status_code=404)
 
     item_name = sale.item.name if sale.item else "Unknown"
-    inventory_service.void_sale(db, sale)
+    inventory_service.void_sale(db, sale, organization_id=org_id)
     return api_response(True, f"Sale voided. Stock restored for '{item_name}'.")

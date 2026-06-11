@@ -18,3 +18,4 @@ def generate_code(length: int = 6) -> str:
     chars = string.ascii_uppercase + string.digits
     chars = chars.translate(str.maketrans("", "", "0O1I"))
     return "".join(secrets.choice(chars) for _ in range(length))
+

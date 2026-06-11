@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from app.api.deps.users import get_db, get_current_user
+from app.api.deps.users import _get_org_id, get_db, get_current_user
 from app.api.deps.rbac import require_roles
 from app.models.user import User
 from app.schemas.inventory import CategoryCreate, CategoryUpdate
@@ -21,7 +21,8 @@ async def list_categories(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    cats = inventory_service.get_categories(db, dept=dept)
+    org_id = _get_org_id(current_user)
+    cats = inventory_service.get_categories(db, dept=dept, organization_id=org_id)
     return PageSerializer(request, obj=cats, resource_name="categories").get_response("Categories fetched.")
 
 
@@ -31,17 +32,23 @@ async def create_category(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "super_admin", "manager")),
 ):
-    # Check duplicate name in same dept
+    org_id = _get_org_id(current_user)
+
     from app.models.category import Category
     existing = db.query(Category).filter(
         Category.name == data.name,
         Category.dept == data.dept,
         Category.deleted == False,
+        Category.organization_id == org_id,
     ).first()
     if existing:
-        return api_response(False, f"Category '{data.name}' already exists in dept '{data.dept}'.", status_code=409)
+        return api_response(
+            False,
+            f"Category '{data.name}' already exists in dept '{data.dept}'.",
+            status_code=409,
+        )
 
-    cat = inventory_service.create_category(db, data, user_id=current_user.id)
+    cat = inventory_service.create_category(db, data, user_id=current_user.id, organization_id=org_id)
     return api_response(True, "Category created.", data=cat.get_summary(), status_code=201)
 
 
@@ -51,7 +58,8 @@ async def get_category(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    cat = inventory_service.get_category(db, category_id)
+    org_id = _get_org_id(current_user)
+    cat = inventory_service.get_category(db, category_id, organization_id=org_id)
     if not cat:
         return api_response(False, "Category not found.", status_code=404)
     return api_response(True, "Category fetched.", data=cat.get_summary())
@@ -64,17 +72,16 @@ async def update_category(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "super_admin", "manager")),
 ):
-    cat = inventory_service.get_category(db, category_id)
-    
+    org_id = _get_org_id(current_user)
+    cat = inventory_service.get_category(db, category_id, organization_id=org_id)
     if not cat:
         return api_response(False, "Category not found.", status_code=404)
 
-    # cat = inventory_service.update_category(db, cat, data)
-    
     cat = inventory_service.update_category(
-    db,
-    cat,
-    data.dict(exclude_unset=True)  # critical
+        db,
+        cat,
+        data.dict(exclude_unset=True),
+        organization_id=org_id,
     )
     return api_response(True, "Category updated.", data=cat.get_summary())
 
@@ -85,11 +92,16 @@ async def delete_category(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "super_admin")),
 ):
-    cat = inventory_service.get_category(db, category_id)
+    org_id = _get_org_id(current_user)
+    cat = inventory_service.get_category(db, category_id, organization_id=org_id)
     if not cat:
         return api_response(False, "Category not found.", status_code=404)
     if cat.items:
-        return api_response(False, "Cannot delete category that has items. Reassign items first.", status_code=400)
+        return api_response(
+            False,
+            "Cannot delete category that has items. Reassign items first.",
+            status_code=400,
+        )
 
-    inventory_service.delete_category(db, cat)
+    inventory_service.delete_category(db, cat, organization_id=org_id)
     return api_response(True, "Category deleted.")

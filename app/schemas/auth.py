@@ -1,46 +1,39 @@
 # app/schemas/auth.py
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 
 
 class SigninSchema(BaseModel):
-    email: str
-    password: str
+    identifier: str = Field(..., min_length=1, description="Email, username, or phone")
+    password: str = Field(..., min_length=1)
 
 
 class SignupSchema(BaseModel):
-    username: str
+    org_name: Optional[str] = Field(None, max_length=120)
+    username: str = Field(..., min_length=2, max_length=50)
     email: EmailStr
-    password: str
-    names: Optional[str] = None
-    phone: Optional[str] = None
+    names: Optional[str] = Field(None, max_length=120)
+    phone: Optional[str] = Field(None, max_length=20)
+    password: str = Field(..., min_length=4)
 
-    @field_validator("username")
-    @classmethod
-    def username_alphanumeric(cls, v: str) -> str:
-        v = v.strip()
-        if len(v) < 3:
-            raise ValueError("Username must be at least 3 characters")
-        return v
 
-    @field_validator("password")
-    @classmethod
-    def password_min_length(cls, v: str) -> str:
-        if len(v) < 6:
-            raise ValueError("Password must be at least 6 characters")
-        return v
+class SignupVerifySchema(BaseModel):
+    token: str
+    email_code: str = Field(..., min_length=6, max_length=6)
+
+
+class CreateStaffSchema(BaseModel):
+    username: str = Field(..., min_length=2, max_length=50)
+    email: EmailStr
+    names: Optional[str] = Field(None, max_length=120)
+    phone: Optional[str] = Field(None, max_length=20)
+    password: Optional[str] = Field(None, min_length=4)
+    role: Optional[str] = Field("staff", pattern="^(staff|cashier|manager)$")
 
 
 class ChangePasswordSchema(BaseModel):
     current_password: str
-    new_password: str
-
-    @field_validator("new_password")
-    @classmethod
-    def new_password_min_length(cls, v: str) -> str:
-        if len(v) < 6:
-            raise ValueError("New password must be at least 6 characters")
-        return v
+    new_password: str = Field(..., min_length=4)
 
 
 class ForgotPasswordSchema(BaseModel):
@@ -49,4 +42,5 @@ class ForgotPasswordSchema(BaseModel):
 
 class ResetPasswordSchema(BaseModel):
     token: str
-    new_password: str
+    email_code: str = Field(..., min_length=6, max_length=6)
+    new_password: str = Field(..., min_length=4)

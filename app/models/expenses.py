@@ -1,6 +1,7 @@
 # app/models/expenses.py
 from typing import Optional
 from datetime import datetime
+from app.models.user import User
 from sqlalchemy import String, Text, Numeric, ForeignKey, DateTime, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -11,7 +12,11 @@ from app.db.mixins import UUIDMixin, TimestampMixin, SoftDeleteMixin
 
 class Expenses(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "expenses"
-
+    
+    organization_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    
     cost: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
     dept: Mapped[str] = mapped_column(String(80), nullable=False, default="general")
     comment: Mapped[Optional[str]] = mapped_column(String(255))
@@ -20,6 +25,11 @@ class Expenses(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     user_id: Mapped[Optional[UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    
+    organization = relationship("Organization", backref="expenses")
+    recorded_by: Mapped[Optional["User"]] = relationship(
+        "User", back_populates="expenses", foreign_keys=[user_id]
     )
 
     def get_summary(self) -> dict:

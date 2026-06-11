@@ -71,6 +71,16 @@ class Category(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
         index=True,
     )
 
+    # org
+    # ORGANIZATION SCOPING
+    organization_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    organization = relationship("Organization", backref="categories")
+
     # Hierarchical: parent_id NULL = root category
     parent_id: Mapped[Optional[UUID]] = mapped_column(
         UUID(as_uuid=True),
@@ -106,6 +116,7 @@ class Category(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
             "name": self.name,
             "desc": self.desc,
             "dept": self.dept,
+            "organization_id": str(self.organization_id),
             "parent_id": str(self.parent_id) if self.parent_id else None,
             "parent_name": self.parent.name if self.parent else None,
             "items_count": len(self.items) if self.items else 0,

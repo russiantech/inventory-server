@@ -41,6 +41,8 @@ class ItemCreate(BaseModel):
     attributes: Optional[Any] = None
     color: Optional[Any] = None
     size: Optional[Any] = None
+    status: Optional[bool] = True  # active by default
+    initial_stock: Optional[int] = 0
 
     @field_validator("s_price")
     @classmethod

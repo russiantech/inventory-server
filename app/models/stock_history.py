@@ -39,6 +39,15 @@ class StockHistory(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     recorded_by: Mapped[Optional["User"]] = relationship(
         "User", back_populates="stock_entries", foreign_keys=[user_id]
     )
+    
+    # ORGANIZATION SCOPING
+    organization_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    organization = relationship("Organization", backref="stock_history")
 
     def get_summary(self) -> dict:
         return {
@@ -54,6 +63,7 @@ class StockHistory(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
             "date_in": self.date_in.isoformat() if self.date_in else None,
             "desc": self.desc,
             "reference": self.reference,
+            "organization_id": str(self.organization_id),
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 

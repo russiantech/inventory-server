@@ -2,14 +2,14 @@
 import logging
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, field_validator
+from typing import Optional
 
-from app.api.deps.users import get_db, get_current_user
+from app.api.deps.users import _get_org_id, get_db, get_current_user
 from app.api.deps.rbac import require_roles
 from app.models.user import User
 from app.services import inventory_service
 from app.utils.responses import api_response, PageSerializer
-from pydantic import BaseModel, field_validator
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -21,6 +21,8 @@ class StockInSchema(BaseModel):
     unit_cost: Optional[float] = None
     desc: Optional[str] = None
     reference: Optional[str] = None
+    # organization_id intentionally removed — derived server-side from the
+    # authenticated user; clients must never supply it.
 
     @field_validator("quantity_in")
     @classmethod
@@ -36,6 +38,13 @@ async def record_stock_in(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "super_admin", "manager", "staff")),
 ):
+    org_id = _get_org_id(current_user)
+
+    # Verify the item exists and belongs to this organisation
+    item = inventory_service.get_item(db, data.item_id)
+    if not item or str(item.organization_id) != org_id:
+        return api_response(False, "Item not found.", status_code=404)
+
     try:
         entry = inventory_service.stock_in(
             db,
@@ -45,6 +54,7 @@ async def record_stock_in(
             desc=data.desc,
             unit_cost=data.unit_cost,
             reference=data.reference,
+            organization_id=org_id,
         )
         return api_response(
             True,
@@ -63,7 +73,8 @@ async def list_stock_history(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    history = inventory_service.get_stock_history(db, item_id=item_id)
+    org_id = _get_org_id(current_user)
+    history = inventory_service.get_stock_history(db, item_id=item_id, organization_id=org_id)
     return PageSerializer(request, obj=history, resource_name="stock_history").get_response("Stock history fetched.")
 
 
@@ -74,11 +85,12 @@ async def item_stock_history(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    item = inventory_service.get_item(db, item_id)
+    org_id = _get_org_id(current_user)
+    item = inventory_service.get_item(db, item_id, organization_id=org_id)
     if not item:
         return api_response(False, "Item not found.", status_code=404)
 
-    history = inventory_service.get_stock_history(db, item_id=item_id)
+    history = inventory_service.get_stock_history(db, item_id=item_id, organization_id=org_id)
     return api_response(
         True, f"Stock history for '{item.name}'.",
         data={
@@ -97,7 +109,8 @@ async def stock_snapshot(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    items = inventory_service.get_items(db, dept=dept)
+    org_id = _get_org_id(current_user)
+    items = inventory_service.get_items(db, dept=dept, organization_id=org_id)
     if low_stock_only:
         items = [i for i in items if i.in_stock < 5]
 

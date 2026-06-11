@@ -24,6 +24,15 @@ class Sales(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
+    # ORGANIZATION SCOPING
+    organization_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    organization = relationship("Organization", backref="sales")
+
     qty_sold: Mapped[int] = mapped_column(Integer, nullable=False)
     unit_price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)   # selling price used
     total_price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)  # qty_sold * unit_price
@@ -54,6 +63,7 @@ class Sales(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
             "category": self.item.category.name if self.item and self.item.category else None,
             "user_id": str(self.user_id) if self.user_id else None,
             "recorded_by": self.recorded_by.names or self.recorded_by.username if self.recorded_by else None,
+            "organization_id": str(self.organization_id),
             "qty_sold": self.qty_sold,
             "unit_price": float(self.unit_price),
             "total_price": float(self.total_price),

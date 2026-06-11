@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from app.api.deps.users import get_db, get_current_user
+from app.api.deps.users import _get_org_id, get_db, get_current_user
 from app.api.deps.rbac import require_roles
 from app.models.user import User
 from app.schemas.inventory import ItemCreate, ItemUpdate
@@ -23,7 +23,10 @@ async def list_items(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    items = inventory_service.get_items(db, dept=dept, category_id=category_id, search=search)
+    org_id = _get_org_id(current_user)
+    items = inventory_service.get_items(
+        db, dept=dept, category_id=category_id, search=search, organization_id=org_id
+    )
     return PageSerializer(request, obj=items, resource_name="items").get_response("Items fetched.")
 
 
@@ -33,8 +36,9 @@ async def create_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "super_admin", "manager", "staff")),
 ):
+    org_id = _get_org_id(current_user)
     payload = data.model_dump()
-    item = inventory_service.create_item(db, data=payload, user_id=current_user.id)
+    item = inventory_service.create_item(db, data=payload, user_id=current_user.id, organization_id=org_id)
     return api_response(True, f"Item '{item.name}' created.", data=item.get_summary(), status_code=201)
 
 
@@ -44,15 +48,18 @@ async def get_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    item = inventory_service.get_item(db, item_id)
+    org_id = _get_org_id(current_user)
+    item = inventory_service.get_item(db, item_id, organization_id=org_id)
     if not item:
         return api_response(False, "Item not found.", status_code=404)
 
     summary = item.get_summary()
-    # Attach stock history
-    history = inventory_service.get_stock_history(db, item_id=item.id)
-    summary["stock_history"] = [h.get_summary() for h in history]
-    summary["sales_history"] = [s.get_summary() for s in inventory_service.get_sales(db, item_id=item.id)]
+    summary["stock_history"] = [
+        h.get_summary() for h in inventory_service.get_stock_history(db, item_id=item.id)
+    ]
+    summary["sales_history"] = [
+        s.get_summary() for s in inventory_service.get_sales(db, item_id=item.id)
+    ]
     return api_response(True, "Item fetched.", data=summary)
 
 
@@ -63,11 +70,12 @@ async def update_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "super_admin", "manager", "staff")),
 ):
-    item = inventory_service.get_item(db, item_id)
+    org_id = _get_org_id(current_user)
+    item = inventory_service.get_item(db, item_id, organization_id=org_id)
     if not item:
         return api_response(False, "Item not found.", status_code=404)
 
-    item = inventory_service.update_item(db, item, data.model_dump(exclude_unset=True))
+    item = inventory_service.update_item(db, item, data.model_dump(exclude_unset=True), organization_id=org_id)
     return api_response(True, "Item updated.", data=item.get_summary())
 
 
@@ -77,9 +85,10 @@ async def delete_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "super_admin")),
 ):
-    item = inventory_service.get_item(db, item_id)
+    org_id = _get_org_id(current_user)
+    item = inventory_service.get_item(db, item_id, organization_id=org_id)
     if not item:
         return api_response(False, "Item not found.", status_code=404)
 
-    inventory_service.delete_item(db, item)
+    inventory_service.delete_item(db, item, organization_id=org_id)
     return api_response(True, f"Item '{item.name}' deleted.")

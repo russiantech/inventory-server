@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
-from app.api.deps.users import get_db, get_current_user
+from app.api.deps.users import _get_org_id, get_db, get_current_user
 from app.api.deps.rbac import require_roles
 from app.models.user import User
 from app.models.rbac import Role
@@ -14,9 +14,23 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("", summary="List all users [admin only]", dependencies=[Depends(require_roles("admin", "super_admin"))])
-async def list_users(request: Request, db: Session = Depends(get_db)):
-    users = db.query(User).filter(User.deleted == False).order_by(User.created_at.desc()).all()
+@router.get(
+    "/",
+    summary="List all users [admin only]",
+    dependencies=[Depends(require_roles("admin", "super_admin"))],
+)
+async def list_users(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    org_id = _get_org_id(current_user)
+    users = (
+        db.query(User)
+        .filter(User.deleted == False, User.organization_id == org_id)
+        .order_by(User.created_at.desc())
+        .all()
+    )
     return PageSerializer(request, obj=users, resource_name="users").get_response("Users fetched.")
 
 
@@ -38,21 +52,44 @@ async def update_profile(
     return api_response(True, "Profile updated.", data=current_user.get_summary())
 
 
-@router.get("/{user_id}", summary="Get a specific user [admin only]", dependencies=[Depends(require_roles("admin", "super_admin"))])
-async def get_user(user_id: str, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.id == user_id, User.deleted == False).first()
+@router.get(
+    "/{user_id}",
+    summary="Get a specific user [admin only]",
+    dependencies=[Depends(require_roles("admin", "super_admin"))],
+)
+async def get_user(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    org_id = _get_org_id(current_user)
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.deleted == False,
+        User.organization_id == org_id,
+    ).first()
     if not user:
         return api_response(False, "User not found.", status_code=404)
     return api_response(True, "User fetched.", data=user.get_summary())
 
 
-@router.put("/{user_id}", summary="Update user [admin only]", dependencies=[Depends(require_roles("admin", "super_admin"))])
+@router.put(
+    "/{user_id}",
+    summary="Update user [admin only]",
+    dependencies=[Depends(require_roles("admin", "super_admin"))],
+)
 async def admin_update_user(
     user_id: str,
     data: UserAdminUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    user = db.query(User).filter(User.id == user_id, User.deleted == False).first()
+    org_id = _get_org_id(current_user)
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.deleted == False,
+        User.organization_id == org_id,
+    ).first()
     if not user:
         return api_response(False, "User not found.", status_code=404)
 
@@ -63,9 +100,22 @@ async def admin_update_user(
     return api_response(True, "User updated.", data=user.get_summary())
 
 
-@router.delete("/{user_id}", summary="Soft-delete a user [admin only]", dependencies=[Depends(require_roles("admin", "super_admin"))])
-async def delete_user(user_id: str, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.id == user_id, User.deleted == False).first()
+@router.delete(
+    "/{user_id}",
+    summary="Soft-delete a user [admin only]",
+    dependencies=[Depends(require_roles("admin", "super_admin"))],
+)
+async def delete_user(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    org_id = _get_org_id(current_user)
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.deleted == False,
+        User.organization_id == org_id,
+    ).first()
     if not user:
         return api_response(False, "User not found.", status_code=404)
     user.deleted = True
@@ -73,9 +123,23 @@ async def delete_user(user_id: str, db: Session = Depends(get_db)):
     return api_response(True, "User removed.")
 
 
-@router.post("/{user_id}/roles/{role_name}", summary="Assign role to user [admin only]", dependencies=[Depends(require_roles("admin", "super_admin"))])
-async def assign_role(user_id: str, role_name: str, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.id == user_id, User.deleted == False).first()
+@router.post(
+    "/{user_id}/roles/{role_name}",
+    summary="Assign role to user [admin only]",
+    dependencies=[Depends(require_roles("admin", "super_admin"))],
+)
+async def assign_role(
+    user_id: str,
+    role_name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    org_id = _get_org_id(current_user)
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.deleted == False,
+        User.organization_id == org_id,
+    ).first()
     if not user:
         return api_response(False, "User not found.", status_code=404)
 
@@ -90,9 +154,23 @@ async def assign_role(user_id: str, role_name: str, db: Session = Depends(get_db
     return api_response(True, f"Role '{role_name}' assigned to {user.username}.", data=user.get_summary())
 
 
-@router.delete("/{user_id}/roles/{role_name}", summary="Remove role from user [admin only]", dependencies=[Depends(require_roles("admin", "super_admin"))])
-async def remove_role(user_id: str, role_name: str, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.id == user_id, User.deleted == False).first()
+@router.delete(
+    "/{user_id}/roles/{role_name}",
+    summary="Remove role from user [admin only]",
+    dependencies=[Depends(require_roles("admin", "super_admin"))],
+)
+async def remove_role(
+    user_id: str,
+    role_name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    org_id = _get_org_id(current_user)
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.deleted == False,
+        User.organization_id == org_id,
+    ).first()
     if not user:
         return api_response(False, "User not found.", status_code=404)
 
