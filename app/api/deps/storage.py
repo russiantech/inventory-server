@@ -2,8 +2,10 @@
 import logging
 from typing import Optional
 
-from app.core.config import settings
+from app.core.config import get_settings
 from app.services.redis_service import get_redis_service_instance, RedisService
+
+settings = get_settings()
 
 logger = logging.getLogger(__name__)
 
