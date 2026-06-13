@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Organization Approval Request</title>
+  <style>
+    body { margin:0; padding:0; background:#f4f6f8; font-family:'Segoe UI',Arial,sans-serif; }
+    .container { max-width:520px; margin:0 auto; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.08); }
+    .header { background:linear-gradient(135deg,#d84315 0%,#ff7043 100%); padding:32px 24px; text-align:center; }
+    .header h1 { color:#fff; font-size:22px; margin:0; font-weight:600; }
+    .badge { display:inline-block; background:#fff; color:#d84315; font-size:11px; font-weight:700; padding:4px 12px; border-radius:20px; text-transform:uppercase; letter-spacing:1px; margin-top:8px; }
+    .body { padding:32px 28px; }
+    .message { color:#6b7280; font-size:14px; line-height:1.6; margin-bottom:20px; }
+    .details { background:#f8f9fa; border-radius:8px; padding:16px; margin:16px 0; }
+    .details table { width:100%; border-collapse:collapse; }
+    .details td { padding:8px 0; font-size:14px; border-bottom:1px solid #e5e7eb; }
+    .details td:first-child { color:#9ca3af; width:35%; }
+    .details td:last-child { color:#344767; font-weight:500; }
+    .details tr:last-child td { border-bottom:none; }
+    .actions { text-align:center; margin:24px 0; }
+    .btn-approve { display:inline-block; background:#4caf50; color:#fff; text-decoration:none; padding:12px 28px; border-radius:8px; font-weight:600; font-size:14px; margin:4px; }
+    .btn-reject { display:inline-block; background:#f44336; color:#fff; text-decoration:none; padding:12px 28px; border-radius:8px; font-weight:600; font-size:14px; margin:4px; }
+    .btn-review { display:inline-block; background:#344767; color:#fff; text-decoration:none; padding:12px 28px; border-radius:8px; font-weight:600; font-size:14px; margin:4px; }
+    .footer { background:#f8f9fa; padding:20px 28px; text-align:center; border-top:1px solid #e5e7eb; }
+    .footer p { color:#9ca3af; font-size:12px; margin:4px 0; }
+    @media (max-width:520px) {
+      .container { margin:8px; border-radius:8px; }
+      .body { padding:24px 20px; }
+    }
+  </style>
+</head>
+<body>
+  <table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 8px;">
+    <div class="container">
+      <div class="header">
+        <h1>Approval Request</h1>
+        <span class="badge">Action Required</span>
+      </div>
+      <div class="body">
+        <p class="message">A new organization has signed up and is awaiting your approval. Please review the details below:</p>
+        <div class="details">
+          <table>
+            <tr><td>Organization</td><td>{{ org_name }}</td></tr>
+            <tr><td>Admin Name</td><td>{{ user_name }}</td></tr>
+            <tr><td>Email</td><td>{{ user_email }}</td></tr>
+            <tr><td>Username</td><td>{{ username }}</td></tr>
+            <tr><td>Phone</td><td>{{ phone or 'Not provided' }}</td></tr>
+            <tr><td>Signup Time</td><td>{{ signup_time }}</td></tr>
+            <tr><td>IP Address</td><td>{{ ip_address }}</td></tr>
+          </table>
+        </div>
+        <div class="actions">
+          <a href="{{ approve_url }}" class="btn-approve">✓ Approve</a>
+          <a href="{{ reject_url }}" class="btn-reject">✕ Reject</a>
+          <a href="{{ review_url }}" class="btn-review">Review Details</a>
+        </div>
+        <p class="message" style="font-size:12px; color:#9ca3af; margin-top:16px;">
+          This request will expire in 24 hours if not actioned. The user will be notified automatically.
+        </p>
+      </div>
+      <div class="footer">
+        <p>&copy; {{ site_name }} Admin Panel</p>
+      </div>
+    </div>
+  </td></tr></table>
+</body>
+</html>

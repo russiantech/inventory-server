@@ -1,7 +1,10 @@
 # app/api/v1/router.py
 from fastapi import APIRouter
 from app.core.config import get_settings
-from app.api.v1 import auth, users, roles, categories, items, stock, sales, reports, expenses
+from app.api.v1 import (
+    auth, users, roles, categories, items, 
+    stock, sales, reports, expenses, plans
+)
 
 settings = get_settings()
 
@@ -23,3 +26,6 @@ v1_router.include_router(expenses.router,   prefix="/expenses",   tags=["Expense
 
 # Reports
 v1_router.include_router(reports.router,    prefix="/reports",    tags=["Reports"])
+
+# Subscription Plans
+v1_router.include_router(plans.router,    prefix="/plans",    tags=["Plans"])

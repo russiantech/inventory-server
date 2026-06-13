@@ -196,3 +196,147 @@ class RedisService:
         except Exception as e:
             logger.error("Error closing Redis pool: %s", e)
 
+
+
+# # v2
+# # app/services/redis_service.py
+# """
+# Redis-backed key/value store with an automatic in-memory fallback.
+
+# If Redis is unreachable (connection refused, timeout, etc.) the service
+# transparently falls back to a process-local in-memory dict so signup,
+# email-verification, and password-reset flows keep working instead of
+# raising 503 "Service temporarily unavailable".
+
+# NOTE: the in-memory fallback is per-process and non-persistent — fine for
+# dev/single-instance deployments, not a substitute for real Redis in
+# multi-worker/production setups.
+# """
+
+# import json
+# import logging
+# import threading
+# import time
+# from typing import Any, Optional
+
+# logger = logging.getLogger(__name__)
+
+# try:
+#     import redis as redis_lib
+# except ImportError:  # pragma: no cover
+#     redis_lib = None
+
+
+# class _InMemoryStore:
+#     """Thread-safe in-memory store with TTL support, mimicking the subset
+#     of the redis-py API used by RedisService."""
+
+#     def __init__(self):
+#         self._data: dict[str, tuple[Any, Optional[float]]] = {}
+#         self._lock = threading.Lock()
+
+#     def _purge_if_expired(self, key: str) -> None:
+#         entry = self._data.get(key)
+#         if entry is None:
+#             return
+#         _, expires_at = entry
+#         if expires_at is not None and expires_at < time.monotonic():
+#             self._data.pop(key, None)
+
+#     def get(self, key: str):
+#         with self._lock:
+#             self._purge_if_expired(key)
+#             entry = self._data.get(key)
+#             return entry[0] if entry else None
+
+#     def set(self, key: str, value: str, ex: Optional[int] = None):
+#         with self._lock:
+#             expires_at = time.monotonic() + ex if ex else None
+#             self._data[key] = (value, expires_at)
+#         return True
+
+#     def delete(self, key: str):
+#         with self._lock:
+#             self._data.pop(key, None)
+#         return True
+
+#     def ping(self):
+#         return True
+
+
+# class RedisService:
+#     """Wraps a real Redis client when available, otherwise an in-memory
+#     store. The public get/set/delete API is identical either way, so
+#     callers (auth.py etc.) don't need to know which backend is active."""
+
+#     def __init__(self, url: str = "redis://localhost:6379/0"):
+#         self._memory_store: Optional[_InMemoryStore] = None
+#         self._client = None
+
+#         if redis_lib is not None:
+#             try:
+#                 client = redis_lib.from_url(
+#                     url, decode_responses=True, socket_connect_timeout=1
+#                 )
+#                 client.ping()
+#                 self._client = client
+#                 logger.info("RedisService: connected to Redis at %s", url)
+#             except Exception as exc:  # noqa: BLE001
+#                 logger.warning(
+#                     "RedisService: Redis unavailable (%s) — using in-memory fallback",
+#                     exc,
+#                 )
+#         else:
+#             logger.warning(
+#                 "RedisService: 'redis' package not installed — using in-memory fallback"
+#             )
+
+#         if self._client is None:
+#             self._memory_store = _InMemoryStore()
+
+#     @property
+#     def using_fallback(self) -> bool:
+#         return self._client is None
+
+#     def get(self, key: str, as_json: bool = False) -> Any:
+#         try:
+#             if self._client is not None:
+#                 raw = self._client.get(key)
+#             else:
+#                 raw = self._memory_store.get(key)
+#         except Exception as exc:  # noqa: BLE001
+#             logger.error("RedisService.get error for key=%s: %s", key, exc)
+#             return None
+
+#         if raw is None:
+#             return None
+#         if as_json:
+#             try:
+#                 return json.loads(raw)
+#             except (TypeError, ValueError):
+#                 return None
+#         return raw
+
+#     def set(self, key: str, value: Any, expiry: Optional[int] = None) -> bool:
+#         if not isinstance(value, str):
+#             value = json.dumps(value)
+#         try:
+#             if self._client is not None:
+#                 if expiry:
+#                     return bool(self._client.set(key, value, ex=expiry))
+#                 return bool(self._client.set(key, value))
+#             return self._memory_store.set(key, value, ex=expiry)
+#         except Exception as exc:  # noqa: BLE001
+#             logger.error("RedisService.set error for key=%s: %s", key, exc)
+#             return False
+
+#     def delete(self, key: str) -> bool:
+#         try:
+#             if self._client is not None:
+#                 self._client.delete(key)
+#             else:
+#                 self._memory_store.delete(key)
+#             return True
+#         except Exception as exc:  # noqa: BLE001
+#             logger.error("RedisService.delete error for key=%s: %s", key, exc)
+#             return False

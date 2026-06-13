@@ -37,7 +37,7 @@ from app.core.config import get_settings as get_app_config
 
 logger = logging.getLogger(__name__)
 
-_templates_dir = Path(__file__).parent.parent / "templates" / "email"
+_templates_dir = Path(__file__).parent.parent / "templates" / "emails"
 _jinja_env = Environment(
     loader=FileSystemLoader(str(_templates_dir)),
     autoescape=select_autoescape(["html"]),
@@ -47,7 +47,7 @@ _jinja_env = Environment(
 #  CID constant — must match src="cid:..." in every email template
 # ─────────────────────────────────────────────────────────────────────────────
 
-LOGO_CID      = "intellect-logo"      # <img src="cid:intellect-logo"> in templates
+LOGO_CID      = "dunis-logo"      # <img src="cid:intellect-logo"> in templates
 LOGO_FILENAME = "logo.png"
 
 _LOGO_CANDIDATES: list[Path] = [
@@ -100,9 +100,11 @@ def _images() -> list:
 
 def _base_ctx() -> dict:
     cfg      = get_app_config()
-    frontend = cfg.hosting_config.frontend_url.rstrip("/")
+    frontend = cfg.frontend_url.rstrip("/")
+    
+    logger.debug(f"Mail provider: {cfg.provider}")
     return {
-        "site_name":       cfg.general_config.site_name,
+        "site_name":       cfg.site_name,
         "logo_url":        f"cid:{LOGO_CID}" if _load_logo() else "",
         "unsubscribe_url": f"{frontend}/unsubscribe",
     }
@@ -134,7 +136,7 @@ def send_email(
     inline_images — list of dicts: {cid, data (bytes), mime_type, filename}
     """
     try:
-        cfg        = get_app_config().email_config
+        cfg        = get_app_config()
         recipients = [to] if isinstance(to, str) else to
         images     = inline_images or []
 
@@ -270,7 +272,7 @@ def send_verification_email(user_email: str, user_name: str, email_code: str) ->
             **ctx,
             "user_name":     user_name,
             "email_code":    email_code,
-            "whatsapp_link": cfg.general_config.whatsapp_community_link,
+            # "whatsapp_link": cfg.whatsapp_community_link,
             "fallback_body": f"Your verification code is: {email_code}",
         })
         if not html:
@@ -286,7 +288,7 @@ def send_verification_email(user_email: str, user_name: str, email_code: str) ->
             )
         return send_email(
             user_email,
-            f"Verify your email — {cfg.general_config.site_name}",
+            f"Verify your email — {cfg.site_name}",
             html,
             inline_images=_images(),
         )
@@ -301,11 +303,11 @@ def send_welcome_email(user_email: str, user_name: str, whatsapp_link: str = "")
         html = _render("welcome.html", {
             **_base_ctx(),
             "user_name":     user_name,
-            "whatsapp_link": whatsapp_link or cfg.general_config.whatsapp_community_link,
-            "login_url":     f"{cfg.hosting_config.frontend_url}/auth/signin",
-            "fallback_body": f"Welcome to {cfg.general_config.site_name}!",
+            "whatsapp_link": whatsapp_link or cfg.whatsapp_community_link,
+            "login_url":     f"{cfg.frontend_url}/auth/signin",
+            "fallback_body": f"Welcome to {cfg.site_name}!",
         })
-        return send_email(user_email, f"Welcome to {cfg.general_config.site_name}!",
+        return send_email(user_email, f"Welcome to {cfg.site_name}!",
                           html, inline_images=_images())
     except Exception as exc:
         logger.error("send_welcome_email error: %s", exc, exc_info=True)
@@ -322,7 +324,7 @@ def send_password_reset_email(user_email: str, user_name: str, reset_code: str) 
             "fallback_body": f"Your password reset code is: {reset_code}",
         })
         return send_email(user_email,
-                          f"Reset your password — {cfg.general_config.site_name}",
+                          f"Reset your password — {cfg.site_name}",
                           html, inline_images=_images())
     except Exception as exc:
         logger.error("send_password_reset_email error: %s", exc, exc_info=True)
@@ -356,7 +358,7 @@ def send_course_rejected_email(creator_email: str, creator_name: str,
             "creator_name":  creator_name,
             "course_title":  course_title,
             "reason":        reason,
-            "dashboard_url": f"{cfg.hosting_config.frontend_url}/creator/courses",
+            "dashboard_url": f"{cfg.frontend_url}/creator/courses",
             "fallback_body": f'Your course "{course_title}" requires changes.',
         })
         return send_email(creator_email, f'Course Review: "{course_title}"',
@@ -373,12 +375,12 @@ def send_team_request_approved(user_email: str, user_name: str, role: str) -> bo
             **_base_ctx(),
             "user_name":     user_name,
             "role":          role,
-            "login_url":     f"{cfg.hosting_config.frontend_url}/auth/signin",
-            "whatsapp_link": cfg.general_config.whatsapp_community_link,
+            "login_url":     f"{cfg.frontend_url}/auth/signin",
+            "whatsapp_link": cfg.whatsapp_community_link,
             "fallback_body": f"Your request to join as {role} has been approved!",
         })
         return send_email(user_email,
-                          f"You're now a {role.title()} on {cfg.general_config.site_name}!",
+                          f"You're now a {role.title()} on {cfg.site_name}!",
                           html, inline_images=_images())
     except Exception as exc:
         logger.error("send_team_request_approved error: %s", exc, exc_info=True)
@@ -394,11 +396,11 @@ def send_team_request_rejected(user_email: str, user_name: str,
             "user_name":     user_name,
             "role":          role,
             "reason":        reason,
-            "courses_url":   f"{cfg.hosting_config.frontend_url}/explore",
+            "courses_url":   f"{cfg.frontend_url}/explore",
             "fallback_body": f"Your {role} request was not approved at this time.",
         })
         return send_email(user_email,
-                          f"Your {role.title()} request — {cfg.general_config.site_name}",
+                          f"Your {role.title()} request — {cfg.site_name}",
                           html, inline_images=_images())
     except Exception as exc:
         logger.error("send_team_request_rejected error: %s", exc, exc_info=True)
@@ -460,9 +462,9 @@ def send_invite_email(email: str, invited_by: str,
             "invited_by":    invited_by,
             "role":          role,
             "invite_url":    invite_url,
-            "fallback_body": f"You've been invited to join {cfg.general_config.site_name}: {invite_url}",
+            "fallback_body": f"You've been invited to join {cfg.site_name}: {invite_url}",
         })
-        return send_email(email, f"You're invited to {cfg.general_config.site_name}",
+        return send_email(email, f"You're invited to {cfg.site_name}",
                           html, inline_images=_images())
     except Exception as exc:
         logger.error("send_invite_email error: %s", exc, exc_info=True)

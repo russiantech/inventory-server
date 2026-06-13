@@ -7,9 +7,11 @@ from app.models.items import Items
 from app.models.stock_history import StockHistory
 from app.models.sales import Sales
 from app.models.expenses import Expenses
+from app.models.plans import Plan, Subscription
 
 __all__ = [
     "user_roles", "Role", "User", "Organization",
     "Category", "Items", "StockHistory", "Sales", "Expenses",
+    "Plan", "Subscription"
     
 ]

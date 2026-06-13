@@ -1,0 +1,73 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to {{ site_name }}</title>
+  <style>
+    body { margin:0; padding:0; background:#f4f6f8; font-family:'Segoe UI',Arial,sans-serif; }
+    .container { max-width:480px; margin:0 auto; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.08); }
+    .header { background:linear-gradient(135deg,#344767 0%,#5a6f9e 100%); padding:32px 24px; text-align:center; }
+    .header img { height:48px; margin-bottom:12px; }
+    .header h1 { color:#fff; font-size:22px; margin:0; font-weight:600; }
+    .body { padding:32px 28px; }
+    .greeting { font-size:16px; color:#344767; margin-bottom:8px; }
+    .message { color:#6b7280; font-size:14px; line-height:1.6; margin-bottom:20px; }
+    .highlight-box { background:#e8f5e9; border-left:4px solid #4caf50; border-radius:6px; padding:16px; margin:16px 0; }
+    .highlight-box p { margin:0; color:#2e7d32; font-size:14px; }
+    .btn-primary { display:inline-block; background:#344767; color:#fff; text-decoration:none; padding:12px 28px; border-radius:8px; font-weight:500; font-size:14px; margin:8px 4px; }
+    .btn-secondary { display:inline-block; background:#fff; color:#344767; text-decoration:none; padding:12px 28px; border-radius:8px; font-weight:500; font-size:14px; border:2px solid #344767; margin:8px 4px; }
+    .feature-list { margin:16px 0; padding:0; list-style:none; }
+    .feature-list li { padding:8px 0; color:#4b5563; font-size:14px; border-bottom:1px solid #f0f2f5; }
+    .feature-list li:last-child { border-bottom:none; }
+    .feature-list li::before { content:"✓"; color:#4caf50; font-weight:bold; margin-right:10px; }
+    .footer { background:#f8f9fa; padding:20px 28px; text-align:center; border-top:1px solid #e5e7eb; }
+    .footer p { color:#9ca3af; font-size:12px; margin:4px 0; }
+    @media (max-width:520px) {
+      .container { margin:8px; border-radius:8px; }
+      .body { padding:24px 20px; }
+    }
+  </style>
+</head>
+<body>
+  <table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 8px;">
+    <div class="container">
+      <div class="header">
+        {% if logo_url %}<img src="{{ logo_url }}" alt="{{ site_name }}" />{% endif %}
+        <h1>Welcome Aboard!</h1>
+      </div>
+      <div class="body">
+        <p class="greeting">Hi {{ user_name }},</p>
+        <p class="message">Your account has been successfully created and verified. Welcome to <strong>{{ site_name }}</strong>!</p>
+        
+        <div class="highlight-box">
+          <p>🎉 Your organization is now ready. Start managing inventory, sales, and analytics in one place.</p>
+        </div>
+        
+        <ul class="feature-list">
+          <li>Real-time inventory tracking</li>
+          <li>Sales analytics & reports</li>
+          <li>Multi-user team management</li>
+          <li>Secure cloud-based storage</li>
+        </ul>
+        
+        <p style="text-align:center; margin-top:24px;">
+          <a href="{{ login_url }}" class="btn-primary">Sign In to Dashboard</a>
+          {% if whatsapp_link %}
+          <a href="{{ whatsapp_link }}" class="btn-secondary">Join Community</a>
+          {% endif %}
+        </p>
+        
+        <p class="message" style="margin-top:20px; font-size:12px; color:#9ca3af;">
+          If you did not create this account, please contact our support team immediately.
+        </p>
+      </div>
+      <div class="footer">
+        <p>&copy; {{ site_name }}. All rights reserved.</p>
+        <p><a href="{{ unsubscribe_url }}" style="color:#9ca3af;">Unsubscribe</a></p>
+      </div>
+    </div>
+  </td></tr></table>
+</body>
+</html>

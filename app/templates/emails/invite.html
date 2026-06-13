@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>You're Invited to {{ site_name }}</title>
+  <style>
+    body { margin:0; padding:0; background:#f4f6f8; font-family:'Segoe UI',Arial,sans-serif; }
+    .container { max-width:480px; margin:0 auto; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.08); }
+    .header { background:linear-gradient(135deg,#344767 0%,#5a6f9e 100%); padding:32px 24px; text-align:center; }
+    .header img { height:48px; margin-bottom:12px; }
+    .header h1 { color:#fff; font-size:22px; margin:0; font-weight:600; }
+    .body { padding:32px 28px; }
+    .greeting { font-size:16px; color:#344767; margin-bottom:8px; }
+    .message { color:#6b7280; font-size:14px; line-height:1.6; margin-bottom:20px; }
+    .invite-box { background:#e3f2fd; border:2px solid #2196f3; border-radius:10px; padding:20px; text-align:center; margin:20px 0; }
+    .invite-box .role { font-size:14px; color:#1976d2; font-weight:600; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; }
+    .invite-box .inviter { font-size:13px; color:#546e7a; }
+    .btn-primary { display:inline-block; background:#344767; color:#fff; text-decoration:none; padding:14px 32px; border-radius:8px; font-weight:600; font-size:15px; margin:12px 0; }
+    .footer { background:#f8f9fa; padding:20px 28px; text-align:center; border-top:1px solid #e5e7eb; }
+    .footer p { color:#9ca3af; font-size:12px; margin:4px 0; }
+    @media (max-width:520px) {
+      .container { margin:8px; border-radius:8px; }
+      .body { padding:24px 20px; }
+    }
+  </style>
+</head>
+<body>
+  <table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 8px;">
+    <div class="container">
+      <div class="header">
+        {% if logo_url %}<img src="{{ logo_url }}" alt="{{ site_name }}" />{% endif %}
+        <h1>You're Invited!</h1>
+      </div>
+      <div class="body">
+        <p class="greeting">Hello,</p>
+        <p class="message"><strong>{{ invited_by }}</strong> has invited you to join <strong>{{ site_name }}</strong> as a team member.</p>
+        <div class="invite-box">
+          <div class="role">{{ role }} Access</div>
+          <div class="inviter">Invited by {{ invited_by }}</div>
+        </div>
+        <p class="message">Click the button below to accept your invitation and set up your account:</p>
+        <p style="text-align:center;">
+          <a href="{{ invite_url }}" class="btn-primary">Accept Invitation</a>
+        </p>
+        <p class="message" style="margin-top:16px; font-size:12px; color:#9ca3af;">
+          This invitation link will expire in 7 days. If you did not expect this invitation, you can safely ignore this email.
+        </p>
+      </div>
+      <div class="footer">
+        <p>&copy; {{ site_name }}. All rights reserved.</p>
+        <p><a href="{{ unsubscribe_url }}" style="color:#9ca3af;">Unsubscribe</a></p>
+      </div>
+    </div>
+  </td></tr></table>
+</body>
+</html>
