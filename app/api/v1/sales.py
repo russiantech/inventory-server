@@ -44,7 +44,7 @@ class SaleUpdateSchema(BaseModel):
     # organization_id intentionally removed — derived server-side
 
 
-@router.get("/", summary="List all sales")
+@router.get("", summary="List all sales")
 async def list_sales(
     request: Request,
     item_id: str = None,
@@ -59,7 +59,7 @@ async def list_sales(
     return PageSerializer(request, obj=sales, resource_name="sales").get_response("Sales fetched.")
 
 
-@router.post("/", summary="Record a sale", status_code=201)
+@router.post("", summary="Record a sale", status_code=201)
 async def create_sale(
     data: SaleCreateSchema,
     db: Session = Depends(get_db),
