@@ -64,3 +64,7 @@ class ItemUpdate(BaseModel):
     category_id: Optional[uuid.UUID] = None
     photos: Optional[Any] = None
     attributes: Optional[Any] = None
+
+
+class ItemDeleteSchema(BaseModel):
+    reason: str

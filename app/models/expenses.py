@@ -27,7 +27,7 @@ class Expenses(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     
-    organization = relationship("Organization", backref="expenses")
+    organization = relationship("Organization", back_populates="expenses")
     recorded_by: Mapped[Optional["User"]] = relationship(
         "User", back_populates="expenses", foreign_keys=[user_id]
     )

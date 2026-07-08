@@ -1,8 +1,12 @@
 # app/models/items.py
 from typing import List, Optional
-from sqlalchemy import String, Text, Integer, Boolean, Numeric, ForeignKey, JSON
+from sqlalchemy import (
+    String, Text, Integer, Boolean, Numeric, 
+    ForeignKey, JSON, DateTime
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from datetime import datetime
 
 from app.db.base_class import Base
 from app.db.mixins import UUIDMixin, TimestampMixin, SoftDeleteMixin
@@ -31,6 +35,14 @@ class Items(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     attributes: Mapped[Optional[dict]] = mapped_column(JSON)
     photos: Mapped[Optional[list]] = mapped_column(JSON)
 
+    # ── NEW: deletion audit trail ───────────────────────────────────────
+    deleted_by: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    delete_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # ─────────────────────────────────────────────────────────────────────
+    
     # FK
     # organization_id: Mapped[Optional[UUID]] = mapped_column(
     #     UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True
@@ -38,7 +50,7 @@ class Items(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     organization_id: Mapped[UUID] = mapped_column(
     UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    organization = relationship("Organization", backref="items")
+    organization = relationship("Organization", back_populates="items")
 
     category_id: Mapped[UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("categories.id", ondelete="RESTRICT"), nullable=False
@@ -51,6 +63,9 @@ class Items(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     category: Mapped["Category"] = relationship("Category", back_populates="items")
     s_history: Mapped[List["StockHistory"]] = relationship(
         "StockHistory", back_populates="item", cascade="all, delete-orphan"
+    )
+    stock_edit_logs: Mapped[List["StockEditLog"]] = relationship(
+        "StockEditLog", back_populates="item", cascade="all, delete-orphan"
     )
     sales: Mapped[List["Sales"]] = relationship(
         "Sales", back_populates="item", cascade="all, delete-orphan"
@@ -79,9 +94,13 @@ class Items(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
             "photos": self.photos,
             "category_id": str(self.category_id),
             "category_name": self.category.name if self.category else None,
+            "deleted_by": str(self.deleted_by) if self.deleted_by else None,
+            "deleted_at": self.deleted_at.isoformat() if self.deleted_at else None,
+            "delete_reason": self.delete_reason,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
     def __repr__(self) -> str:
         return f"<Items(name={self.name}, in_stock={self.in_stock})>"
+

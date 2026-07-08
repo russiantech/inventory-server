@@ -331,8 +331,9 @@ def send_password_reset_email(user_email: str, user_name: str, reset_code: str) 
         return False
 
 
-def send_course_approved_email(creator_email: str, creator_name: str,
-                               course_title: str, course_url: str) -> bool:
+def send_course_approved_email(
+    creator_email: str, creator_name: str,
+    course_title: str, course_url: str) -> bool:
     try:
         cfg  = get_app_config()
         html = _render("course_approved.html", {

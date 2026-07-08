@@ -79,7 +79,11 @@ class Category(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
         nullable=False,
         index=True,
     )
-    organization = relationship("Organization", backref="categories")
+    # organization = relationship("Organization", backr="categories")
+    organization = relationship(
+        "Organization",
+        back_populates="categories",
+    )
 
     # Hierarchical: parent_id NULL = root category
     parent_id: Mapped[Optional[UUID]] = mapped_column(

@@ -53,19 +53,21 @@ class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     # is_org_admin = Mapped[bool] = Mapped(Boolean, default=False)  # Can manage org users/settings
     is_org_admin: Mapped[bool] = mapped_column(Boolean, default=False) # Flag to indicate if user is an organization admin
     
+    # BREAK THE CYCLE: use_alter=True on the reverse relationship
     owned_organization = relationship(
         "Organization",
         foreign_keys="Organization.owner_id",
         back_populates="owner",
         uselist=False,
     )
-    # 
-    
     roles: Mapped[List["Role"]] = relationship(
         "Role", secondary=user_roles, back_populates="users", lazy="selectin"
     )
     stock_entries: Mapped[List["StockHistory"]] = relationship(
         "StockHistory", back_populates="recorded_by", foreign_keys="StockHistory.user_id"
+    )
+    stock_edits: Mapped[List["StockEditLog"]] = relationship(
+        "StockEditLog", back_populates="user", foreign_keys="StockEditLog.user_id"
     )
     sales: Mapped[List["Sales"]] = relationship(
         "Sales", back_populates="recorded_by", foreign_keys="Sales.user_id"

@@ -31,7 +31,7 @@ class Sales(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
         nullable=False,
         index=True,
     )
-    organization = relationship("Organization", backref="sales")
+    organization = relationship("Organization", back_populates="sales")
 
     qty_sold: Mapped[int] = mapped_column(Integer, nullable=False)
     unit_price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)   # selling price used

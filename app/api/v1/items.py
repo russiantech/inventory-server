@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.deps.users import _get_org_id, get_db, get_current_user
 from app.api.deps.rbac import require_roles
 from app.models.user import User
-from app.schemas.inventory import ItemCreate, ItemUpdate
+from app.schemas.inventory import ItemCreate, ItemDeleteSchema, ItemUpdate
 from app.services import inventory_service
 from app.utils.responses import api_response, PageSerializer
 
@@ -79,16 +79,42 @@ async def update_item(
     return api_response(True, "Item updated.", data=item.get_summary())
 
 
-@router.delete("/{item_id}", summary="Delete item [admin only]")
-async def delete_item(
+# @router.delete("/{item_id}", summary="Delete item [admin only]")
+# async def delete_item(
+#     item_id: str,
+#     db: Session = Depends(get_db),
+#     current_user: User = Depends(require_roles("admin", "super_admin")),
+# ):
+#     org_id = _get_org_id(current_user)
+#     item = inventory_service.get_item(db, item_id, organization_id=org_id)
+#     if not item:
+#         return api_response(False, "Item not found.", status_code=404)
+
+#     inventory_service.delete_item(db, item, organization_id=org_id)
+#     return api_response(True, f"Item '{item.name}' deleted.")
+
+# v2
+@router.delete("/{item_id}", summary="Delete a product")
+async def remove_item(
     item_id: str,
+    data: ItemDeleteSchema,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "super_admin")),
+    current_user: User = Depends(require_roles("admin", "super_admin", "manager", "staff")),
 ):
     org_id = _get_org_id(current_user)
     item = inventory_service.get_item(db, item_id, organization_id=org_id)
     if not item:
         return api_response(False, "Item not found.", status_code=404)
 
-    inventory_service.delete_item(db, item, organization_id=org_id)
-    return api_response(True, f"Item '{item.name}' deleted.")
+    try:
+        inventory_service.delete_item(
+            db,
+            item=item,
+            organization_id=org_id,
+            user_id=current_user.id,
+            user_roles=[r.name for r in current_user.roles],  # adjust to however roles are stored on User
+            reason=data.reason,
+        )
+        return api_response(True, f'"{item.name}" deleted.')
+    except ValueError as e:
+        return api_response(False, str(e), status_code=400)

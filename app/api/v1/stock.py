@@ -2,34 +2,19 @@
 import logging
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, field_validator
-from typing import Optional
 
 from app.api.deps.users import _get_org_id, get_db, get_current_user
 from app.api.deps.rbac import require_roles
 from app.models.user import User
 from app.services import inventory_service
+from app.schemas.stock import (
+    StockInSchema, StockReverseSchema, 
+    StockUpdateSchema
+)
 from app.utils.responses import api_response, PageSerializer
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-class StockInSchema(BaseModel):
-    item_id: str
-    quantity_in: int
-    unit_cost: Optional[float] = None
-    desc: Optional[str] = None
-    reference: Optional[str] = None
-    # organization_id intentionally removed — derived server-side from the
-    # authenticated user; clients must never supply it.
-
-    @field_validator("quantity_in")
-    @classmethod
-    def qty_positive(cls, v):
-        if v <= 0:
-            raise ValueError("Quantity must be greater than zero")
-        return v
 
 
 @router.post("/in", summary="Record new stock receipt [manager/admin]", status_code=201)
@@ -65,6 +50,79 @@ async def record_stock_in(
     except ValueError as e:
         return api_response(False, str(e), status_code=400)
 
+
+# @router.put("/{stock_id}", summary="Edit a stock entry [staff/manager/admin]")
+# async def update_stock_entry(
+#     stock_id: str,
+#     data: StockUpdateSchema,
+#     db: Session = Depends(get_db),
+#     current_user: User = Depends(require_roles("admin", "super_admin", "manager", "staff")),
+# ):
+#     org_id = _get_org_id(current_user)
+#     try:
+#         entry = inventory_service.update_stock_entry(
+#             db,
+#             stock_id=stock_id,
+#             organization_id=org_id,
+#             quantity_in=data.quantity_in,
+#             unit_cost=data.unit_cost,
+#             desc=data.desc,
+#             reference=data.reference,
+#         )
+#         if not entry:
+#             return api_response(False, "Stock entry not found.", status_code=404)
+#         return api_response(True, "Stock entry updated.", data=entry.get_summary())
+#     except ValueError as e:
+#         return api_response(False, str(e), status_code=400)
+
+# v2
+@router.put("/{stock_id}", summary="Edit a stock entry [manager/admin]")
+async def update_stock_entry(
+    stock_id: str,
+    data: StockUpdateSchema,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "super_admin", "manager", "staff")),
+):
+    org_id = _get_org_id(current_user)
+    try:
+        entry = inventory_service.update_stock_entry(
+            db,
+            stock_id=stock_id,
+            organization_id=org_id,
+            quantity_in=data.quantity_in,
+            unit_cost=data.unit_cost,
+            desc=data.desc,
+            reference=data.reference,
+            user_id=current_user.id,  # ← NEW: pass editor
+        )
+        if not entry:
+            return api_response(False, "Stock entry not found.", status_code=404)
+        return api_response(True, "Stock entry updated.", data=entry.get_summary())
+    except ValueError as e:
+        return api_response(False, str(e), status_code=400)
+
+
+@router.post("/{stock_id}/reverse", summary="Reverse a stock entry [manager/admin]")
+async def reverse_stock_entry(
+    stock_id: str,
+    data: StockReverseSchema,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "super_admin", "manager", "staff")),
+):
+    org_id = _get_org_id(current_user)
+    try:
+        reversal = inventory_service.reverse_stock_entry(
+            db,
+            stock_id=stock_id,
+            organization_id=org_id,
+            reason=data.reason,
+            user_id=current_user.id,
+        )
+        if not reversal:
+            return api_response(False, "Stock entry not found.", status_code=404)
+        return api_response(True, "Stock entry reversed.", data=reversal.get_summary())
+    except ValueError as e:
+        return api_response(False, str(e), status_code=400)
 
 @router.get("/history", summary="All stock-in entries")
 async def list_stock_history(
@@ -121,3 +179,18 @@ async def stock_snapshot(
         snapshots.append(s)
 
     return api_response(True, "Stock snapshot.", data={"count": len(snapshots), "items": snapshots})
+
+
+@router.get("/{stock_id}/edit-history", summary="Get edit audit trail for a stock entry")
+async def stock_entry_edit_history(
+    stock_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    org_id = _get_org_id(current_user)
+    history = inventory_service.get_stock_entry_edit_history(db, stock_id, organization_id=org_id)
+    return api_response(
+        True,
+        f"Edit history for stock entry {stock_id}.",
+        data=[h.get_summary() for h in history],
+    )

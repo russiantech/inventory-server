@@ -2,7 +2,7 @@
 import logging
 from typing import Optional, List
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 
 from app.models.items import Items
 from app.models.stock_history import StockHistory
@@ -31,13 +31,6 @@ def get_category(db: Session, category_id: str, organization_id: str = None) -> 
     return q.first()
 
 
-# def create_category(db: Session, name: str, dept: str = "general", desc: str = None, parent_id=None, user_id=None) -> Category:
-#     cat = Category(name=name.strip(), dept=dept, desc=desc, parent_id=parent_id, user_id=user_id)
-#     db.add(cat)
-#     db.commit()
-#     db.refresh(cat)
-#     return cat
-
 def create_category(
     db: Session,
     data,
@@ -63,87 +56,7 @@ def create_category(
     db.refresh(cat)
     return cat
 
-# def create_category(
-#     db: Session,
-#     data: dict,
-#     user_id=None,
-# ) -> Category:
-#     cat = Category(
-#         name=data.get("name").strip(),
-#         dept=data.get("dept", "general"),
-#         desc=data.get("desc"),
-#         parent_id=data.get("parent_id"),
-#         user_id=user_id,  # now supported
-#     )
-#     db.add(cat)
-#     db.commit()
-#     db.refresh(cat)
-#     return cat
 
-# def update_category(db: Session, cat: Category, **kwargs) -> Category:
-#     for k, v in kwargs.items():
-#         if hasattr(cat, k) and v is not None:
-#             setattr(cat, k, v)
-#     db.commit()
-#     db.refresh(cat)
-#     return cat
-
-# v2
-# def update_category(
-#     db: Session,
-#     cat: Category,
-#     data,
-# ) -> Category:
-#     if data.name is not None:
-#         name = data.name.strip()
-#         if not name:
-#             raise ValueError("Category name cannot be empty")
-#         cat.name = name
-
-#     if data.dept is not None:
-#         cat.dept = data.dept
-
-#     if data.desc is not None:
-#         cat.desc = data.desc
-
-#     if data.parent_id is not None:
-#         cat.parent_id = data.parent_id
-
-#     db.commit()
-#     db.refresh(cat)
-#     return cat
-
-# # v3
-# def update_category(
-#     db: Session,
-#     cat: Category,
-#     data,
-# ) -> Category:
-#     update_data = data.model_dump(exclude_unset=True)
-
-#     if "name" in update_data:
-#         name = (update_data["name"] or "").strip()
-#         if not name:
-#             raise ValueError("Category name cannot be empty")
-#         cat.name = name
-
-#     if "dept" in update_data:
-#         cat.dept = update_data["dept"]
-
-#     if "desc" in update_data:
-#         cat.desc = update_data["desc"]
-
-#     # THIS FIXES YOUR ISSUE
-#     if "parent_id" in update_data:
-#         cat.parent_id = update_data["parent_id"]  # can be None
-
-#     print(f"Updating category {cat.id} with data: {update_data}")  # Debug log
-    
-#     db.commit()
-#     db.refresh(cat)
-#     return cat
-
-# v4
 def update_category(db: Session, cat: Category, data: dict) -> Category:
     for k, v in data.items():
         if not hasattr(cat, k):
@@ -190,30 +103,6 @@ def get_item(db: Session, item_id: str, organization_id: str = None) -> Optional
         q = q.filter(Items.organization_id == organization_id)
     return q.first()
 
-
-# def create_item(db: Session, data: dict, user_id=None) -> Items:
-#     initial = data.pop("initial_stock", 0) or data.pop("in_stock", 0)
-#     item = Items(**data, initial_stock=initial, in_stock=initial, user_id=user_id)
-#     db.add(item)
-#     db.flush()
-
-#     # Record initial stock if > 0
-#     if initial > 0:
-#         entry = StockHistory(
-#             item_id=item.id,
-#             user_id=user_id,
-#             quantity_in=initial,
-#             stock_before=0,
-#             stock_after=initial,
-#             desc="Initial stock entry",
-#         )
-#         db.add(entry)
-
-#     db.commit()
-#     db.refresh(item)
-#     return item
-
-# v2
 def create_item(db: Session, data: dict, user_id=None, organization_id: str = None) -> Items:
     # Extract stock safely
     initial = data.pop("initial_stock", data.pop("in_stock", 0)) or 0
@@ -223,7 +112,7 @@ def create_item(db: Session, data: dict, user_id=None, organization_id: str = No
     print(f"Organization ID: {organization_id}")
     print(f"Data: {data}")
     
-    # ✅ Allowed fields only (STRICT)
+    # Allowed fields only (STRICT)
     allowed_fields = {
         "name",
         "sku",              
@@ -272,33 +161,46 @@ def create_item(db: Session, data: dict, user_id=None, organization_id: str = No
     return item
 
 
-# def update_item(db: Session, item: Items, data: dict, organization_id: str = None) -> Items:
-#     if organization_id and item.organization_id != organization_id:
-#         raise ValueError("Item does not belong to the organization")
-#     for k, v in data.items():
-#         if hasattr(item, k):
-#             setattr(item, k, v)
-#     db.commit()
-#     db.refresh(item)
-#     return item
-
-# app/services/inventory_service.py
-
-def update_item(db: Session, item: Items, data: dict, organization_id: str = None) -> Items:
-    # FIX: compare as strings to handle UUID object vs string mismatch
-    if organization_id and str(item.organization_id) != str(organization_id):
+def delete_item(
+    db: Session,
+    item: Items,
+    organization_id: str,
+    user_id,
+    user_roles: List[str],
+    reason: str,
+) -> Items:
+    if str(item.organization_id) != str(organization_id):
         raise ValueError("Item does not belong to the organization")
-    for k, v in data.items():
-        if hasattr(item, k):
-            setattr(item, k, v)
+    if not reason or not reason.strip():
+        raise ValueError("A reason is required to delete a product")
+
+    is_privileged = any(r in ("admin", "super_admin") for r in user_roles)
+
+    if not is_privileged:
+        if item.in_stock != 0:
+            raise ValueError(
+                "This product still has stock on hand. Reduce stock to zero "
+                "(via a manager-approved adjustment) before deleting, or ask "
+                "a manager/admin to delete it."
+            )
+        has_sales = (
+            db.query(Sales)
+            .filter(Sales.item_id == item.id, Sales.deleted == False)
+            .first()
+        )
+        if has_sales:
+            raise ValueError(
+                "This product has recorded sales and cannot be deleted by staff. "
+                "Ask a manager or admin if it needs to be removed."
+            )
+
+    item.deleted = True
+    item.deleted_by = user_id
+    item.deleted_at = func.now()
+    item.delete_reason = reason.strip()
     db.commit()
     db.refresh(item)
     return item
-
-# def delete_item(db: Session, item: Items) -> None:
-#     item.deleted = True
-#     db.commit()
-# app/services/inventory_service.py  (same fix)
 
 def delete_category(db: Session, cat: Category, organization_id: str = None) -> None:
     if organization_id and str(cat.organization_id) != str(organization_id):
@@ -345,6 +247,241 @@ def get_stock_history(db: Session, item_id=None, organization_id: str = None) ->
     if organization_id:
         q = q.filter(StockHistory.organization_id == organization_id)
     return q.order_by(desc(StockHistory.date_in)).all()
+
+
+def update_stock_entry(
+    db: Session,
+    stock_id,
+    organization_id: str,
+    quantity_in: int,
+    unit_cost: float = None,
+    desc: str = None,
+    reference: str = None,
+) -> Optional[StockHistory]:
+    entry = (
+        db.query(StockHistory)
+        .filter(
+            StockHistory.id == stock_id,
+            StockHistory.organization_id == organization_id,
+            StockHistory.deleted == False,
+        )
+        .first()
+    )
+    if not entry:
+        return None
+    if entry.is_reversal:
+        raise ValueError("Cannot edit a reversal record")
+    if entry.is_reversed:
+        raise ValueError("Cannot edit an entry that has already been reversed")
+    if quantity_in <= 0:
+        raise ValueError("Quantity must be greater than zero")
+
+    item = get_item(db, entry.item_id, organization_id=organization_id)
+    if not item:
+        raise ValueError("Associated item not found")
+
+    delta = quantity_in - entry.quantity_in
+
+    if delta != 0:
+        if item.in_stock + delta < 0:
+            raise ValueError("Edit would drop stock below zero")
+
+        # Cascade-adjust every later entry for this item so the ledger
+        # stays consistent with item.in_stock
+        later_entries = (
+            db.query(StockHistory)
+            .filter(
+                StockHistory.item_id == entry.item_id,
+                StockHistory.deleted == False,
+                StockHistory.date_in > entry.date_in,
+            )
+            .order_by(StockHistory.date_in.asc())
+            .all()
+        )
+        for later in later_entries:
+            later.stock_before += delta
+            later.stock_after += delta
+
+        item.in_stock += delta
+
+    entry.quantity_in = quantity_in
+    entry.stock_after = entry.stock_before + quantity_in
+    if unit_cost is not None:
+        entry.unit_cost = unit_cost
+    if desc is not None:
+        entry.desc = desc
+    if reference is not None:
+        entry.reference = reference
+
+    db.commit()
+    db.refresh(entry)
+    db.refresh(item)
+    return entry
+
+
+def reverse_stock_entry(
+    db: Session,
+    stock_id,
+    organization_id: str,
+    reason: str,
+    user_id=None,
+) -> Optional[StockHistory]:
+    entry = (
+        db.query(StockHistory)
+        .filter(
+            StockHistory.id == stock_id,
+            StockHistory.organization_id == organization_id,
+            StockHistory.deleted == False,
+        )
+        .first()
+    )
+    if not entry:
+        return None
+    if entry.is_reversal:
+        raise ValueError("Cannot reverse a reversal record")
+    if entry.is_reversed:
+        raise ValueError("This entry has already been reversed")
+    if not reason or not reason.strip():
+        raise ValueError("A reason is required to reverse a stock entry")
+
+    item = get_item(db, entry.item_id, organization_id=organization_id)
+    if not item:
+        raise ValueError("Associated item not found")
+    if item.in_stock < entry.quantity_in:
+        raise ValueError(
+            f"Cannot reverse: current stock ({item.in_stock}) is lower than the "
+            f"quantity being reversed ({entry.quantity_in}). Some of it may already be sold."
+        )
+
+    stock_before = item.in_stock
+    stock_after = stock_before - entry.quantity_in
+    item.in_stock = stock_after
+
+    reversal = StockHistory(
+        item_id=entry.item_id,
+        user_id=user_id,
+        quantity_in=entry.quantity_in,
+        stock_before=stock_before,
+        stock_after=stock_after,
+        unit_cost=entry.unit_cost,
+        desc=reason.strip(),
+        reference=entry.reference,
+        is_reversal=True,
+        reversed_entry_id=entry.id,
+        organization_id=organization_id,
+    )
+    entry.is_reversed = True
+
+    db.add(reversal)
+    db.commit()
+    db.refresh(reversal)
+    db.refresh(item)
+    return reversal
+
+# 
+from app.models.stock_edit_log import StockEditLog  # or wherever your audit model lives
+
+
+def update_stock_entry(
+    db: Session,
+    stock_id,
+    organization_id: str,
+    quantity_in: int,
+    unit_cost: float = None,
+    desc: str = None,
+    reference: str = None,
+    user_id=None,  # ← NEW: who made the edit
+) -> Optional[StockHistory]:
+    
+    entry = (
+        db.query(StockHistory)
+        .filter(
+            StockHistory.id == stock_id,
+            StockHistory.organization_id == organization_id,
+            StockHistory.deleted == False,
+        )
+        .first()
+    )
+    
+    if not entry:
+        return None
+    if entry.is_reversal:
+        raise ValueError("Cannot edit a reversal record")
+    if entry.is_reversed:
+        raise ValueError("Cannot edit an entry that has already been reversed")
+    if quantity_in <= 0:
+        raise ValueError("Quantity must be greater than zero")
+
+    item = get_item(db, entry.item_id, organization_id=organization_id)
+    if not item:
+        raise ValueError("Associated item not found")
+
+    # ── CAPTURE OLD VALUES BEFORE CHANGE ──
+    old_values = {
+        "quantity_in": entry.quantity_in,
+        "unit_cost": float(entry.unit_cost) if entry.unit_cost else None,
+        "desc": entry.desc,
+        "reference": entry.reference,
+        "stock_after": entry.stock_after,
+    }
+    delta = quantity_in - entry.quantity_in
+
+    if delta != 0:
+        if item.in_stock + delta < 0:
+            raise ValueError("Edit would drop stock below zero")
+
+        # Cascade-adjust every later entry for this item
+        later_entries = (
+            db.query(StockHistory)
+            .filter(
+                StockHistory.item_id == entry.item_id,
+                StockHistory.deleted == False,
+                StockHistory.date_in > entry.date_in,
+            )
+            .order_by(StockHistory.date_in.asc())
+            .all()
+        )
+        for later in later_entries:
+            later.stock_before += delta
+            later.stock_after += delta
+
+        item.in_stock += delta
+
+    # Apply changes
+    entry.quantity_in = quantity_in
+    entry.stock_after = entry.stock_before + quantity_in
+    if unit_cost is not None:
+        entry.unit_cost = unit_cost
+    if desc is not None:
+        entry.desc = desc
+    if reference is not None:
+        entry.reference = reference
+
+    # ── AUDIT LOG: record the edit ──
+    audit = StockEditLog(
+        stock_entry_id=entry.id,
+        item_id=entry.item_id,
+        user_id=user_id,
+        organization_id=organization_id,
+        old_quantity_in=old_values["quantity_in"],
+        new_quantity_in=quantity_in,
+        quantity_delta=delta,
+        old_unit_cost=old_values["unit_cost"],
+        new_unit_cost=unit_cost,
+        old_desc=old_values["desc"],
+        new_desc=desc,
+        old_reference=old_values["reference"],
+        new_reference=reference,
+        old_stock_after=old_values["stock_after"],
+        new_stock_after=entry.stock_after,
+        edit_reason=desc or "Stock entry edited",  # use desc as reason fallback
+    )
+    db.add(audit)
+
+    db.commit()
+    db.refresh(entry)
+    db.refresh(item)
+    return entry
 
 
 # ─── Sales ───────────────────────────────────────────────────────────────────
@@ -437,3 +574,4 @@ def delete_expense(db: Session, exp: Expenses, organization_id: str = None) -> N
             raise ValueError("Expense not found or does not belong to the organization")
     exp.deleted = True
     db.commit()
+
