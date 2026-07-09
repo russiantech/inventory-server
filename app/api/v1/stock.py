@@ -8,7 +8,7 @@ from app.api.deps.rbac import require_roles
 from app.models.user import User
 from app.services import inventory_service
 from app.schemas.stock import (
-    StockInSchema, StockReverseSchema, 
+    StockInSchema, StockReverseSchema,
     StockUpdateSchema
 )
 from app.utils.responses import api_response, PageSerializer
@@ -51,31 +51,6 @@ async def record_stock_in(
         return api_response(False, str(e), status_code=400)
 
 
-# @router.put("/{stock_id}", summary="Edit a stock entry [staff/manager/admin]")
-# async def update_stock_entry(
-#     stock_id: str,
-#     data: StockUpdateSchema,
-#     db: Session = Depends(get_db),
-#     current_user: User = Depends(require_roles("admin", "super_admin", "manager", "staff")),
-# ):
-#     org_id = _get_org_id(current_user)
-#     try:
-#         entry = inventory_service.update_stock_entry(
-#             db,
-#             stock_id=stock_id,
-#             organization_id=org_id,
-#             quantity_in=data.quantity_in,
-#             unit_cost=data.unit_cost,
-#             desc=data.desc,
-#             reference=data.reference,
-#         )
-#         if not entry:
-#             return api_response(False, "Stock entry not found.", status_code=404)
-#         return api_response(True, "Stock entry updated.", data=entry.get_summary())
-#     except ValueError as e:
-#         return api_response(False, str(e), status_code=400)
-
-# v2
 @router.put("/{stock_id}", summary="Edit a stock entry [manager/admin]")
 async def update_stock_entry(
     stock_id: str,
@@ -90,16 +65,43 @@ async def update_stock_entry(
             stock_id=stock_id,
             organization_id=org_id,
             quantity_in=data.quantity_in,
+            edit_reason=data.edit_reason,
             unit_cost=data.unit_cost,
             desc=data.desc,
             reference=data.reference,
-            user_id=current_user.id,  # ← NEW: pass editor
+            user_id=current_user.id,
         )
         if not entry:
             return api_response(False, "Stock entry not found.", status_code=404)
         return api_response(True, "Stock entry updated.", data=entry.get_summary())
     except ValueError as e:
         return api_response(False, str(e), status_code=400)
+
+
+@router.get("/{stock_id}/edit-logs", summary="Paginated edit history for a stock entry")
+async def stock_entry_edit_logs(
+    stock_id: str,
+    page: int = 1,
+    page_size: int = 20,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    org_id = _get_org_id(current_user)
+    logs, total, page, page_size = inventory_service.get_stock_edit_logs(
+        db, stock_id=stock_id, organization_id=org_id, page=page, page_size=page_size
+    )
+    return api_response(
+        True, "Edit logs fetched.",
+        data={
+            "edit_logs": [l.get_summary() for l in logs],
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "total_pages": (total + page_size - 1) // page_size,
+            },
+        },
+    )
 
 
 @router.post("/{stock_id}/reverse", summary="Reverse a stock entry [manager/admin]")
@@ -123,6 +125,7 @@ async def reverse_stock_entry(
         return api_response(True, "Stock entry reversed.", data=reversal.get_summary())
     except ValueError as e:
         return api_response(False, str(e), status_code=400)
+
 
 @router.get("/history", summary="All stock-in entries")
 async def list_stock_history(
@@ -180,17 +183,3 @@ async def stock_snapshot(
 
     return api_response(True, "Stock snapshot.", data={"count": len(snapshots), "items": snapshots})
 
-
-@router.get("/{stock_id}/edit-history", summary="Get edit audit trail for a stock entry")
-async def stock_entry_edit_history(
-    stock_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    org_id = _get_org_id(current_user)
-    history = inventory_service.get_stock_entry_edit_history(db, stock_id, organization_id=org_id)
-    return api_response(
-        True,
-        f"Edit history for stock entry {stock_id}.",
-        data=[h.get_summary() for h in history],
-    )

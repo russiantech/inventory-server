@@ -102,6 +102,11 @@ class StockHistory(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     # ─────────────────────────────────────────────────────────────────────
 
+    # ── NEW: denormalized counter, updated on every edit ────────────────
+    # Cheaper than counting edit_logs on every list render (avoids N+1).
+    edit_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # ─────────────────────────────────────────────────────────────────────
+
     item: Mapped["Items"] = relationship("Items", back_populates="s_history")
     recorded_by: Mapped[Optional["User"]] = relationship(
         "User", back_populates="stock_entries", foreign_keys=[user_id]
@@ -115,12 +120,20 @@ class StockHistory(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     organization = relationship("Organization", back_populates="stock_history")
     
+    # edit_logs: Mapped[List["StockEditLog"]] = relationship(
+    #     "StockEditLog",
+    #     back_populates="stock_entry",
+    #     cascade="all, delete-orphan",
+    #     order_by=lambda: StockEditLog.created_at.desc(),  # ← lambda defers evaluation
+    #     lazy="dynamic",  # optional: use dynamic loading for large audit trails
+    # )
+    
     edit_logs: Mapped[List["StockEditLog"]] = relationship(
         "StockEditLog",
         back_populates="stock_entry",
         cascade="all, delete-orphan",
-        order_by=lambda: StockEditLog.created_at.desc(),  # ← lambda defers evaluation
-        lazy="dynamic",  # optional: use dynamic loading for large audit trails
+        order_by="StockEditLog.created_at.desc()",  # string form — no import needed
+        lazy="dynamic",
     )
     
     def get_summary(self) -> dict:
@@ -140,6 +153,7 @@ class StockHistory(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
             "is_reversal": self.is_reversal,
             "is_reversed": self.is_reversed,
             "reversed_entry_id": str(self.reversed_entry_id) if self.reversed_entry_id else None,
+            "edit_count": self.edit_count,
             "organization_id": str(self.organization_id),
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
