@@ -25,22 +25,34 @@ class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     ip: Mapped[Optional[str]] = mapped_column(String(50))
     
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    # is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
-    email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
-    # After email_verified, before relationships:
+    is_org_admin: Mapped[bool] = mapped_column(
+        Boolean, 
+        nullable=False, 
+        default=False,
+        server_default="false"  # ← for existing rows during migration
+    )
+
+    email_verified: Mapped[bool] = mapped_column(
+        Boolean, 
+        nullable=False, 
+        default=False,
+        server_default="false"
+    )
+
+    is_online: Mapped[bool] = mapped_column(
+        Boolean, 
+        nullable=False, 
+        default=False,
+        server_default="false"
+    )
+
     last_seen: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    is_online: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Relationships
     
     # ── Organization ──
-
-    # organization_id: Mapped[Optional[str]] = mapped_column(
-    #     UUID(as_uuid=True),
-    #     ForeignKey("organizations.id")
-    # )
     organization_id: Mapped[Optional[UUID]] = mapped_column(
     UUID(as_uuid=True),
     ForeignKey("organizations.id", ondelete="SET NULL"),
@@ -49,9 +61,6 @@ class User(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     
     organization = relationship("Organization", back_populates="users", foreign_keys=[organization_id])
-    
-    # is_org_admin = Mapped[bool] = Mapped(Boolean, default=False)  # Can manage org users/settings
-    is_org_admin: Mapped[bool] = mapped_column(Boolean, default=False) # Flag to indicate if user is an organization admin
     
     # BREAK THE CYCLE: use_alter=True on the reverse relationship
     owned_organization = relationship(
