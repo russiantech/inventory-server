@@ -1,6 +1,5 @@
 # v2
 # app/api/v1/users.py
-from http.client import HTTPException
 import logging
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
@@ -11,10 +10,11 @@ from app.models.user import User
 from app.models.rbac import Role
 from app.schemas.user import UserUpdate, UserAdminUpdate
 from app.utils.responses import api_response, PageSerializer
-from app.core.security.password import hash_password, verify_password
+# from app.core.security.password import hash_password
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
 
 def _is_super_admin(user: User) -> bool:
     return any(r.name == "super_admin" for r in user.roles)
@@ -125,41 +125,9 @@ async def admin_update_user(
     return api_response(True, "User updated.", data=user.get_summary())
 
 
-# @router.put(
-#     "/{user_id}/reset-password",
-#     summary="Admin reset user password — super_admin: any org, admin: own org only",
-#     dependencies=[Depends(require_roles("admin", "dev", "super_admin"))],
-# )
-# async def admin_reset_password(
-#     user_id: str,
-#     data: dict,
-#     db: Session = Depends(get_db),
-#     current_user: User = Depends(get_current_user),
-# ):
-#     """Allow admin to reset a user's password without knowing the old one."""
-#     user = _scoped_user_query(db, current_user).filter(User.id == user_id).first()
-#     if not user:
-#         return api_response(False, "User not found.", status_code=404)
-
-#     # Org admins cannot reset passwords for other org-admin / super_admin accounts.
-#     if not _is_super_admin(current_user) and (user.is_org_admin or _is_super_admin(user)):
-#         return api_response(False, "Not permitted to reset this account's password.", status_code=403)
-
-#     new_password = data.get("new_password")
-#     if not new_password or len(new_password) < 4:
-#         return api_response(False, "Password must be at least 4 characters.", status_code=400)
-
-#     # user.password_hash = hash_password(new_password) # not working with passlib context, so using set_password method instead
-#     user.set_password(data.new_password)
-#     db.commit()
-
-#     logger.info(f"{current_user.username} reset password for user {user.username}")
-#     return api_response(True, f"Password reset for {user.username}.", data={"email": user.email})
-
-
 @router.put(
     "/{user_id}/reset-password",
-    summary="Admin reset user password",
+    summary="Admin reset user password — super_admin: any org, admin: own org only",
     dependencies=[Depends(require_roles("admin", "dev", "super_admin"))],
 )
 async def admin_reset_password(
@@ -168,62 +136,27 @@ async def admin_reset_password(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Allow authorized admins to reset a user's password."""
-    user = _scoped_user_query(db, current_user).filter(
-        User.id == user_id
-    ).first()
-
+    """Allow admin to reset a user's password without knowing the old one."""
+    user = _scoped_user_query(db, current_user).filter(User.id == user_id).first()
     if not user:
-        return api_response(
-            False, "User not found.", status_code=404
-        )
+        return api_response(False, "User not found.", status_code=404)
 
-    if not _is_super_admin(current_user) and (
-        user.is_org_admin or _is_super_admin(user)
-    ):
-        return api_response(
-            False,
-            "Not permitted to reset this account's password.",
-            status_code=403,
-        )
+    # Org admins cannot reset passwords for other org-admin / super_admin accounts.
+    if not _is_super_admin(current_user) and (user.is_org_admin or _is_super_admin(user)):
+        return api_response(False, "Not permitted to reset this account's password.", status_code=403)
 
     new_password = data.get("new_password")
+    if not new_password or len(new_password) < 4:
+        return api_response(False, "Password must be at least 4 characters.", status_code=400)
 
-    if not isinstance(new_password, str) or len(new_password) < 4:
-        return api_response(
-            False,
-            "Password must be at least 4 characters.",
-            status_code=400,
-        )
-
-    # Use the same hashing function as the sign-in verifier.
-    user.password_hash = hash_password(new_password)
-
+    # user.password = hash_password(new_password) # not working with passlib context, so using set_password method instead
+    user.set_password(new_password)
     db.commit()
     db.refresh(user)
 
-    # Verify the persisted hash before reporting success.
-    if not verify_password(new_password, user.password_hash):
-        logger.error(
-            "Password verification failed after reset for user_id=%s",
-            user.id,
-        )
-        raise HTTPException(
-            status_code=500,
-            detail="Password reset could not be verified.",
-        )
+    logger.info(f"{current_user.username} reset password for user {user.username}")
+    return api_response(True, f"Password reset for {user.username}.", data={"email": user.email})
 
-    logger.info(
-        "Password reset completed for user_id=%s by admin_id=%s",
-        user.id,
-        current_user.id,
-    )
-
-    return api_response(
-        True,
-        "Password reset successfully.",
-        data={"email": user.email},
-    )
 
 @router.delete(
     "/{user_id}",
