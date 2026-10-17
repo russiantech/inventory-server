@@ -377,10 +377,10 @@ async def admin_update_user(
     return api_response(True, "User updated.", data=user.get_summary())
 
 
-@router.post(
+@router.put(
     "/{user_id}/reset-password",
     summary="Admin reset user password — super_admin: any org, admin: own org only",
-    dependencies=[Depends(require_roles("admin", "super_admin"))],
+    dependencies=[Depends(require_roles("admin", "dev", "super_admin"))],
 )
 async def admin_reset_password(
     user_id: str,
@@ -411,7 +411,7 @@ async def admin_reset_password(
 @router.delete(
     "/{user_id}",
     summary="Soft-delete a user — super_admin: any org, admin: own org only",
-    dependencies=[Depends(require_roles("admin", "super_admin"))],
+    dependencies=[Depends(require_roles("admin", "dev", "super_admin"))],
 )
 async def delete_user(
     user_id: str,
@@ -433,7 +433,7 @@ async def delete_user(
 @router.post(
     "/{user_id}/roles/{role_name}",
     summary="Assign role to user — super_admin role assignable by super_admin only",
-    dependencies=[Depends(require_roles("admin", "super_admin"))],
+    dependencies=[Depends(require_roles("admin", "dev", "super_admin"))],
 )
 async def assign_role(
     user_id: str,
@@ -462,7 +462,7 @@ async def assign_role(
 @router.delete(
     "/{user_id}/roles/{role_name}",
     summary="Remove role from user [admin/super_admin]",
-    dependencies=[Depends(require_roles("admin", "super_admin"))],
+    dependencies=[Depends(require_roles("admin", "dev", "super_admin"))],
 )
 async def remove_role(
     user_id: str,
