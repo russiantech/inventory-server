@@ -15,7 +15,6 @@ from app.utils.responses import api_response, PageSerializer
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-
 def _is_super_admin(user: User) -> bool:
     return any(r.name == "super_admin" for r in user.roles)
 

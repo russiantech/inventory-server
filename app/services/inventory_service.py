@@ -58,11 +58,41 @@ def create_category(
     return cat
 
 
-def update_category(db: Session, cat: Category, data: dict) -> Category:
+# def update_category(db: Session, cat: Category, data: dict) -> Category:
+#     for k, v in data.items():
+#         if not hasattr(cat, k):
+#             continue
+#         # Allow explicit null for parent_id (root-level category)
+#         if k == "parent_id":
+#             setattr(cat, k, v)
+#         elif v is not None:
+#             setattr(cat, k, v)
+
+#     db.commit()
+#     db.refresh(cat)
+#     return cat
+
+
+def update_category(
+    db: Session,
+    cat: Category,
+    data: dict,
+    organization_id=None,
+) -> Category:
+
+    # Validate organization ownership
+    if (
+        organization_id is not None
+        and str(cat.organization_id) != str(organization_id)
+    ):
+        raise ValueError("Category does not belong to this organization.")
+
+    allowed_fields = {"name", "desc", "dept", "parent_id"}
+
     for k, v in data.items():
-        if not hasattr(cat, k):
+        if k not in allowed_fields:
             continue
-        # Allow explicit null for parent_id (root-level category)
+
         if k == "parent_id":
             setattr(cat, k, v)
         elif v is not None:
@@ -70,6 +100,7 @@ def update_category(db: Session, cat: Category, data: dict) -> Category:
 
     db.commit()
     db.refresh(cat)
+
     return cat
 
 
@@ -139,6 +170,48 @@ def create_item(db: Session, data: dict, user_id=None, organization_id: str = No
     db.refresh(item)
     return item
 
+def update_item(
+    db: Session,
+    item: Items,
+    data: dict,
+    organization_id: str = None,
+) -> Items:
+    """Update an item while enforcing organization ownership."""
+
+    if (
+        organization_id is not None
+        and str(item.organization_id) != str(organization_id)
+    ):
+        raise ValueError("Item does not belong to this organization.")
+
+    allowed_fields = {
+        "name",
+        "sku",
+        "desc",
+        "dept",
+        "category_id",
+        "c_price",
+        "s_price",
+        "disc",
+        "attributes",
+        "photos",
+        "status",
+    }
+
+    for key, value in data.items():
+        if key not in allowed_fields:
+            continue
+
+        # Avoid overwriting existing values with None.
+        # If your schema allows intentionally clearing fields,
+        # handle those fields separately.
+        if value is not None:
+            setattr(item, key, value)
+
+    db.commit()
+    db.refresh(item)
+
+    return item
 
 def delete_item(
     db: Session,
@@ -427,9 +500,23 @@ def get_sales(db: Session, item_id=None, dept: str = None, user_id=None, organiz
     return q.order_by(desc(Sales.sale_date)).all()
 
 
-def get_sale(db: Session, sale_id) -> Optional[Sales]:
-    return db.query(Sales).filter(Sales.id == sale_id, Sales.deleted == False).first()
+# def get_sale(db: Session, sale_id) -> Optional[Sales]:
+#     return db.query(Sales).filter(Sales.id == sale_id, Sales.deleted == False).first()
 
+def get_sale(
+    db: Session,
+    sale_id,
+    organization_id: str = None,
+) -> Optional[Sales]:
+    q = db.query(Sales).filter(
+        Sales.id == sale_id,
+        Sales.deleted == False,
+    )
+
+    if organization_id is not None:
+        q = q.filter(Sales.organization_id == organization_id)
+
+    return q.first()
 
 def create_sale(db: Session, item_id, qty_sold: int, unit_price: float, user_id=None, dept: str = "general", comment: str = None, organization_id: str = None) -> Sales:
     item = get_item(db, item_id, organization_id=organization_id)
@@ -467,11 +554,35 @@ def create_sale(db: Session, item_id, qty_sold: int, unit_price: float, user_id=
     return sale
 
 
-def void_sale(db: Session, sale: Sales) -> None:
-    """Soft-delete a sale and restore the stock."""
-    item = get_item(db, sale.item_id, organization_id=sale.organization_id)
+# def void_sale(db: Session, sale: Sales) -> None:
+#     """Soft-delete a sale and restore the stock."""
+#     item = get_item(db, sale.item_id, organization_id=sale.organization_id)
+#     if item:
+#         item.in_stock += sale.qty_sold
+#     sale.deleted = True
+#     db.commit()
+
+# update void_sale to enforce organization ownership and raise ValueError if the sale does not belong to the organization.
+def void_sale(
+    db: Session,
+    sale: Sales,
+    organization_id: str = None,
+) -> None:
+    if (
+        organization_id is not None
+        and str(sale.organization_id) != str(organization_id)
+    ):
+        raise ValueError("Sale does not belong to this organization.")
+
+    item = get_item(
+        db,
+        sale.item_id,
+        organization_id=organization_id or sale.organization_id,
+    )
+
     if item:
         item.in_stock += sale.qty_sold
+
     sale.deleted = True
     db.commit()
 

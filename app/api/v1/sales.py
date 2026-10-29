@@ -68,8 +68,17 @@ async def create_sale(
     org_id = _get_org_id(current_user)
 
     # Verify the item exists and belongs to this organisation
-    item = inventory_service.get_item(db, data.item_id)
-    if not item or str(item.organization_id) != org_id:
+    # item = inventory_service.get_item(db, data.item_id)
+    # if not item or str(item.organization_id) != org_id:
+    #     return api_response(False, "Item not found.", status_code=404)
+
+    item = inventory_service.get_item(
+        db,
+        data.item_id,
+        organization_id=org_id,
+    )
+
+    if not item:
         return api_response(False, "Item not found.", status_code=404)
 
     try:
