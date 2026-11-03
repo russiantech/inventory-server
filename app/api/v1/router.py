@@ -3,7 +3,8 @@ from fastapi import APIRouter
 from app.core.config import get_settings
 from app.api.v1 import (
     auth, users, roles, categories, items, 
-    stock, sales, reports, expenses, plans
+    stock, sales, reports, expenses, plans,
+    branches, departments,
 )
 
 settings = get_settings()
@@ -14,6 +15,10 @@ v1_router = APIRouter(prefix=settings.api_prefix)
 v1_router.include_router(auth.router,       prefix="/auth",       tags=["Auth"])
 v1_router.include_router(users.router,      prefix="/users",      tags=["Users"])
 v1_router.include_router(roles.router,      prefix="/roles",      tags=["Roles"])
+
+# Branches & departments (company units)
+v1_router.include_router(branches.router,    prefix="/branches",    tags=["Branches"])
+v1_router.include_router(departments.router, prefix="/departments", tags=["Departments"])
 
 # Inventory
 v1_router.include_router(categories.router, prefix="/categories", tags=["Categories"])

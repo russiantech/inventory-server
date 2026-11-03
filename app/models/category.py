@@ -38,6 +38,16 @@ class Category(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
         back_populates="categories",
     )
 
+    # ── BRANCH / DEPARTMENT SCOPING (nullable for rolling deploys; the app layer always sets them) ──
+    branch_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    department_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    branch = relationship("Branch", foreign_keys=[branch_id])
+    department = relationship("Department", foreign_keys=[department_id])
+
     # Hierarchical: parent_id NULL = root category
     parent_id: Mapped[Optional[UUID]] = mapped_column(
         UUID(as_uuid=True),
@@ -74,6 +84,10 @@ class Category(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
             "desc": self.desc,
             "dept": self.dept,
             "organization_id": str(self.organization_id),
+            "branch_id": str(self.branch_id) if self.branch_id else None,
+            "branch_name": self.branch.name if self.branch else None,
+            "department_id": str(self.department_id) if self.department_id else None,
+            "department_name": self.department.name if self.department else None,
             "parent_id": str(self.parent_id) if self.parent_id else None,
             "parent_name": self.parent.name if self.parent else None,
             "items_count": len(self.items) if self.items else 0,

@@ -52,6 +52,16 @@ class Items(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     organization = relationship("Organization", back_populates="items")
 
+    # ── BRANCH / DEPARTMENT SCOPING (nullable for rolling deploys; the app layer always sets them) ──
+    branch_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    department_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    branch = relationship("Branch", foreign_keys=[branch_id])
+    department = relationship("Department", foreign_keys=[department_id])
+
     category_id: Mapped[UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("categories.id", ondelete="RESTRICT"), nullable=False
     )
@@ -84,6 +94,10 @@ class Items(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
             "desc": self.desc,
             "dept": self.dept,
             "organization_id": str(self.organization_id),
+            "branch_id": str(self.branch_id) if self.branch_id else None,
+            "branch_name": self.branch.name if self.branch else None,
+            "department_id": str(self.department_id) if self.department_id else None,
+            "department_name": self.department.name if self.department else None,
             "c_price": float(self.c_price) if self.c_price else None,
             "s_price": float(self.s_price),
             "initial_stock": self.initial_stock,

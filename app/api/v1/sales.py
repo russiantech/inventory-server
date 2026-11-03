@@ -8,6 +8,8 @@ from typing import Optional
 from app.api.deps.users import _get_org_id, get_db, get_current_user
 from app.api.deps.rbac import require_roles
 from app.models.user import User
+from app.api.deps.scope import get_access_scope, get_scope_filter, scope_error_response
+from app.services.scope_service import AccessScope, ScopeFilter, ScopeError
 from app.services import inventory_service
 from app.utils.responses import api_response, PageSerializer
 
@@ -51,11 +53,12 @@ async def list_sales(
     dept: str = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    sf: ScopeFilter = Depends(get_scope_filter),
 ):
     org_id = _get_org_id(current_user)
-    # Staff only see their own sales; managers/admins see all
+    # Staff only see their own sales; managers/admins see all (within their branch scope)
     uid = None if current_user.has_role("admin", "super_admin", "manager") else current_user.id
-    sales = inventory_service.get_sales(db, item_id=item_id, dept=dept, user_id=uid, organization_id=org_id)
+    sales = inventory_service.get_sales(db, item_id=item_id, dept=dept, user_id=uid, organization_id=org_id, scope=sf)
     return PageSerializer(request, obj=sales, resource_name="sales").get_response("Sales fetched.")
 
 
@@ -64,6 +67,7 @@ async def create_sale(
     data: SaleCreateSchema,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    scope: AccessScope = Depends(get_access_scope),
 ):
     org_id = _get_org_id(current_user)
 
@@ -78,7 +82,7 @@ async def create_sale(
         organization_id=org_id,
     )
 
-    if not item:
+    if not item or not scope.can_access(item.branch_id, item.department_id):
         return api_response(False, "Item not found.", status_code=404)
 
     try:
@@ -107,9 +111,10 @@ async def get_sale(
     sale_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    sf: ScopeFilter = Depends(get_scope_filter),
 ):
     org_id = _get_org_id(current_user)
-    sale = inventory_service.get_sale(db, sale_id, organization_id=org_id)
+    sale = inventory_service.get_sale(db, sale_id, organization_id=org_id, scope=sf)
     if not sale:
         return api_response(False, "Sale not found.", status_code=404)
     return api_response(True, "Sale fetched.", data=sale.get_summary())
@@ -121,11 +126,17 @@ async def update_sale(
     data: SaleUpdateSchema,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "super_admin", "manager")),
+    scope: AccessScope = Depends(get_access_scope),
+    sf: ScopeFilter = Depends(get_scope_filter),
 ):
     org_id = _get_org_id(current_user)
-    sale = inventory_service.get_sale(db, sale_id, organization_id=org_id)
+    sale = inventory_service.get_sale(db, sale_id, organization_id=org_id, scope=sf)
     if not sale:
         return api_response(False, "Sale not found.", status_code=404)
+    try:
+        scope.require_role(sale.branch_id, "manager")
+    except ScopeError as e:
+        return scope_error_response(e)
     if data.comment is not None:
         sale.comment = data.comment
         db.commit()
@@ -137,12 +148,19 @@ async def update_sale(
 async def void_sale(
     sale_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "super_admin")),
+    current_user: User = Depends(require_roles("admin", "super_admin", "manager")),
+    scope: AccessScope = Depends(get_access_scope),
+    sf: ScopeFilter = Depends(get_scope_filter),
 ):
     org_id = _get_org_id(current_user)
-    sale = inventory_service.get_sale(db, sale_id, organization_id=org_id)
+    sale = inventory_service.get_sale(db, sale_id, organization_id=org_id, scope=sf)
     if not sale:
         return api_response(False, "Sale not found.", status_code=404)
+    try:
+        # Org admins pass; managers must be an admin of the sale's branch.
+        scope.require_role(sale.branch_id, "admin")
+    except ScopeError as e:
+        return scope_error_response(e)
 
     item_name = sale.item.name if sale.item else "Unknown"
     inventory_service.void_sale(db, sale, organization_id=org_id)

@@ -9,6 +9,10 @@ class CategoryCreate(BaseModel):
     desc: Optional[str] = None
     dept: str = "general"
     parent_id: Optional[uuid.UUID] = None
+    # Branch scoping — optional for backward compatibility; the server falls back to
+    # the caller's only branch, or rejects the request if it is ambiguous.
+    branch_id: Optional[uuid.UUID] = None
+    department_id: Optional[uuid.UUID] = None
 
     @field_validator("name")
     @classmethod
@@ -24,6 +28,7 @@ class CategoryUpdate(BaseModel):
     desc: Optional[str] = None
     dept: Optional[str] = None
     parent_id: Optional[uuid.UUID] = None
+    department_id: Optional[uuid.UUID] = None
     
 
 
@@ -43,6 +48,8 @@ class ItemCreate(BaseModel):
     size: Optional[Any] = None
     status: Optional[bool] = True  # active by default
     initial_stock: Optional[int] = 0
+    branch_id: Optional[uuid.UUID] = None
+    department_id: Optional[uuid.UUID] = None
 
     @field_validator("s_price")
     @classmethod
@@ -62,6 +69,7 @@ class ItemUpdate(BaseModel):
     disc: Optional[int] = None
     status: Optional[bool] = None
     category_id: Optional[uuid.UUID] = None
+    department_id: Optional[uuid.UUID] = None
     photos: Optional[Any] = None
     attributes: Optional[Any] = None
 

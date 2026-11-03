@@ -41,6 +41,8 @@ from app.schemas.auth import (
     CreateStaffSchema,
 )
 from app.services.auth_service import authenticate_user, create_user
+from app.services import branch_service
+from app.services.scope_service import ScopeError, build_access_scope
 from app.services.email_service import send_verification_email, send_welcome_email, send_password_reset_email
 from app.services.redis_service import RedisService
 from app.api.deps.storage import get_redis_service
@@ -219,6 +221,10 @@ async def signup_verify(
         db.commit()
         db.refresh(user)
 
+        # Place the new member in the org's default branch; admins can move them later.
+        default_branch = branch_service.ensure_default_branch(db, org.id)
+        branch_service.assign_member(db, org.id, user, default_branch, "staff")
+
         redis.delete(redis_key)
 
         background_tasks.add_task(
@@ -271,6 +277,9 @@ async def signup_verify(
     # Update org owner
     org.owner_id = user.id
     db.commit()
+
+    # Every organization starts with a default branch + 'general' department.
+    branch_service.ensure_default_branch(db, org.id)
 
     redis.delete(redis_key)
 
@@ -456,6 +465,22 @@ async def create_staff_user(
         field = "email" if existing.email == data.email.lower() else "username"
         raise HTTPException(status_code=409, detail=f"An account with this {field} already exists.")
 
+    # Resolve the branch the new user will work in (before creating anything)
+    try:
+        creator_scope = build_access_scope(db, current_user)
+        target_branch_id, target_department_id = creator_scope.resolve_write_target(
+            db, data.branch_id, data.department_id
+        )
+        creator_scope.require_role(target_branch_id, "manager")
+        branch_role = data.branch_role or ("manager" if data.role == "manager" else "staff")
+        if branch_role == "admin" and not creator_scope.org_wide:
+            raise ScopeError("Only organization admins can appoint a branch admin.")
+        if branch_role == "manager":
+            # granting manager rights is an admin-level action within the branch
+            creator_scope.require_role(target_branch_id, "admin")
+    except ScopeError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+
     # Generate temp password if not provided
     temp_password = data.password or secrets.token_urlsafe(12)
 
@@ -476,6 +501,16 @@ async def create_staff_user(
     user.is_active = False
     db.commit()
     db.refresh(user)
+
+    try:
+        branch = branch_service.get_branch(db, target_branch_id, org.id)
+        branch_service.assign_member(
+            db, org.id, user, branch, branch_role,
+            department_id=target_department_id, assigned_by=current_user.id,
+        )
+    except ValueError as e:
+        # user exists but could not be placed: report clearly instead of failing silently
+        raise HTTPException(status_code=400, detail=f"User created, but branch assignment failed: {e}")
 
     logger.info(f"Admin {current_user.username} created user {user.username} in org {org.name}")
 

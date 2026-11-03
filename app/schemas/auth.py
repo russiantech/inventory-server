@@ -29,6 +29,10 @@ class CreateStaffSchema(BaseModel):
     phone: Optional[str] = Field(None, max_length=20)
     password: Optional[str] = Field(None, min_length=4)
     role: Optional[str] = Field("staff", pattern="^(staff|cashier|manager)$")
+    # Optional branch assignment (defaults to the org's default branch / the creator's only branch)
+    branch_id: Optional[str] = None
+    department_id: Optional[str] = None
+    branch_role: Optional[str] = Field(None, pattern="^(admin|manager|staff)$")
 
 
 class ChangePasswordSchema(BaseModel):

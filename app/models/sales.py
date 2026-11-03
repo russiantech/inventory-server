@@ -33,6 +33,16 @@ class Sales(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     organization = relationship("Organization", back_populates="sales")
 
+    # ── BRANCH / DEPARTMENT SCOPING (nullable for rolling deploys; the app layer always sets them) ──
+    branch_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    department_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    branch = relationship("Branch", foreign_keys=[branch_id])
+    department = relationship("Department", foreign_keys=[department_id])
+
     qty_sold: Mapped[int] = mapped_column(Integer, nullable=False)
     unit_price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)   # selling price used
     total_price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)  # qty_sold * unit_price
@@ -64,6 +74,10 @@ class Sales(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
             "user_id": str(self.user_id) if self.user_id else None,
             "recorded_by": self.recorded_by.names or self.recorded_by.username if self.recorded_by else None,
             "organization_id": str(self.organization_id),
+            "branch_id": str(self.branch_id) if self.branch_id else None,
+            "branch_name": self.branch.name if self.branch else None,
+            "department_id": str(self.department_id) if self.department_id else None,
+            "department_name": self.department.name if self.department else None,
             "qty_sold": self.qty_sold,
             "unit_price": float(self.unit_price),
             "total_price": float(self.total_price),

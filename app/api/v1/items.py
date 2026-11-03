@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from app.api.deps.users import _get_org_id, get_db, get_current_user
 from app.api.deps.rbac import require_roles
 from app.models.user import User
+from app.api.deps.scope import get_access_scope, get_scope_filter, scope_error_response
+from app.services.scope_service import AccessScope, ScopeFilter, ScopeError
 from app.schemas.inventory import ItemCreate, ItemDeleteSchema, ItemUpdate
 from app.services import inventory_service
 from app.utils.responses import api_response, PageSerializer
@@ -22,10 +24,11 @@ async def list_items(
     search: str = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    sf: ScopeFilter = Depends(get_scope_filter),
 ):
     org_id = _get_org_id(current_user)
     items = inventory_service.get_items(
-        db, dept=dept, category_id=category_id, search=search, organization_id=org_id
+        db, dept=dept, category_id=category_id, search=search, organization_id=org_id, scope=sf
     )
     return PageSerializer(request, obj=items, resource_name="items").get_response("Items fetched.")
 
@@ -35,10 +38,22 @@ async def create_item(
     data: ItemCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "super_admin", "manager", "staff")),
+    scope: AccessScope = Depends(get_access_scope),
 ):
     org_id = _get_org_id(current_user)
     payload = data.model_dump()
-    item = inventory_service.create_item(db, data=payload, user_id=current_user.id, organization_id=org_id)
+    try:
+        branch_id, department_id = scope.resolve_write_target(
+            db, payload.pop("branch_id", None), payload.pop("department_id", None)
+        )
+        item = inventory_service.create_item(
+            db, data=payload, user_id=current_user.id, organization_id=org_id,
+            branch_id=branch_id, department_id=department_id,
+        )
+    except ScopeError as e:
+        return scope_error_response(e)
+    except ValueError as e:
+        return api_response(False, str(e), status_code=400)
     return api_response(True, f"Item '{item.name}' created.", data=item.get_summary(), status_code=201)
 
 
@@ -47,18 +62,19 @@ async def get_item(
     item_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    sf: ScopeFilter = Depends(get_scope_filter),
 ):
     org_id = _get_org_id(current_user)
-    item = inventory_service.get_item(db, item_id, organization_id=org_id)
+    item = inventory_service.get_item(db, item_id, organization_id=org_id, scope=sf)
     if not item:
         return api_response(False, "Item not found.", status_code=404)
 
     summary = item.get_summary()
     summary["stock_history"] = [
-        h.get_summary() for h in inventory_service.get_stock_history(db, item_id=item.id)
+        h.get_summary() for h in inventory_service.get_stock_history(db, item_id=item.id, organization_id=org_id)
     ]
     summary["sales_history"] = [
-        s.get_summary() for s in inventory_service.get_sales(db, item_id=item.id)
+        s.get_summary() for s in inventory_service.get_sales(db, item_id=item.id, organization_id=org_id)
     ]
     return api_response(True, "Item fetched.", data=summary)
 
@@ -69,13 +85,17 @@ async def update_item(
     data: ItemUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "super_admin", "manager", "staff")),
+    sf: ScopeFilter = Depends(get_scope_filter),
 ):
     org_id = _get_org_id(current_user)
-    item = inventory_service.get_item(db, item_id, organization_id=org_id)
+    item = inventory_service.get_item(db, item_id, organization_id=org_id, scope=sf)
     if not item:
         return api_response(False, "Item not found.", status_code=404)
 
-    item = inventory_service.update_item(db, item, data.model_dump(exclude_unset=True), organization_id=org_id)
+    try:
+        item = inventory_service.update_item(db, item, data.model_dump(exclude_unset=True), organization_id=org_id)
+    except ValueError as e:
+        return api_response(False, str(e), status_code=400)
     return api_response(True, "Item updated.", data=item.get_summary())
 
 
@@ -100,9 +120,10 @@ async def remove_item(
     data: ItemDeleteSchema,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "super_admin", "manager", "staff")),
+    sf: ScopeFilter = Depends(get_scope_filter),
 ):
     org_id = _get_org_id(current_user)
-    item = inventory_service.get_item(db, item_id, organization_id=org_id)
+    item = inventory_service.get_item(db, item_id, organization_id=org_id, scope=sf)
     if not item:
         return api_response(False, "Item not found.", status_code=404)
 

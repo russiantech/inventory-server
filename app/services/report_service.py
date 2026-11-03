@@ -705,12 +705,14 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 
 from app.models.items import Items
 from app.models.stock_history import StockHistory
 from app.models.sales import Sales
 from app.models.expenses import Expenses
+from app.models.branch import Branch, Department
+from app.services.scope_service import ScopeFilter, apply_scope
 
 
 def _date_range(period: str, year: int = None, month: int = None, start: str = None, end: str = None):
@@ -753,6 +755,7 @@ def get_report(
     dept: str = None,
     include_expenses: bool = True,
     organization_id: str = None,
+    scope: Optional[ScopeFilter] = None,
 ):
     p = "custom" if (start and end) else period
     s_dt, e_dt = _date_range(p, year=year, month=month, start=start, end=end)
@@ -770,6 +773,7 @@ def get_report(
         sq = sq.filter(Sales.dept == dept)
     if organization_id:
         sq = sq.filter(Sales.organization_id == organization_id)
+    sq = apply_scope(sq, Sales, scope)
     sales_rows = sq.order_by(desc(Sales.sale_date)).all()
 
     total_revenue = sum(float(s.total_price) for s in sales_rows)
@@ -810,6 +814,7 @@ def get_report(
         stq = stq.filter(StockHistory.item_id == item_id)
     if organization_id:
         stq = stq.filter(StockHistory.organization_id == organization_id) 
+    stq = apply_scope(stq, StockHistory, scope)
     stock_rows = stq.all()
     total_stock_in = sum(s.quantity_in for s in stock_rows)
 
@@ -827,6 +832,7 @@ def get_report(
         iq = iq.filter(Items.dept == dept)
     if organization_id:
         iq = iq.filter(Items.organization_id == organization_id) 
+    iq = apply_scope(iq, Items, scope)
     inventory_items = iq.all()
     total_current_stock = sum(i.in_stock for i in inventory_items)
     inventory_value_cost = sum((float(i.c_price) if i.c_price else 0) * i.in_stock for i in inventory_items)
@@ -845,6 +851,7 @@ def get_report(
             eq = eq.filter(Expenses.dept == dept)
         if organization_id:
             eq = eq.filter(Expenses.organization_id == organization_id)
+        eq = apply_scope(eq, Expenses, scope)
         expenses_rows = eq.all()
         total_expenses = sum(float(e.cost) for e in expenses_rows)
 
@@ -855,6 +862,7 @@ def get_report(
         "start": s_dt.isoformat(),
         "end": e_dt.isoformat(),
         "include_expenses": include_expenses,
+        "scope": scope.describe() if scope else {"branch_id": None, "department_id": None, "collective": True},
         "summary": {
             "total_revenue": total_revenue,
             "total_units_sold": total_units_sold,
@@ -941,9 +949,10 @@ def get_product_detail_report(
     year: int = None, month: int = None,
     start: str = None, end: str = None,
     organization_id: str = None,
+    scope: Optional[ScopeFilter] = None,
 ):
     from app.services.inventory_service import get_item
-    item = get_item(db, item_id)
+    item = get_item(db, item_id, organization_id=organization_id, scope=scope)
     if not item:
         return None
 
@@ -993,3 +1002,132 @@ def get_product_detail_report(
         "stock_history": [h.get_summary() for h in stock_history],
     }
 
+
+
+# ─── Branch / department comparison ──────────────────────────────────────────
+
+def get_breakdown_report(
+    db: Session,
+    organization_id,
+    scope: Optional[ScopeFilter] = None,
+    group_by: str = "branch",
+    period: str = "monthly",
+    year: int = None,
+    month: int = None,
+    start: str = None,
+    end: str = None,
+    branch_ids: Optional[list] = None,
+):
+    """
+    Side-by-side figures per branch (``group_by='branch'``) or per department
+    (``group_by='department'``), plus a collective total row.
+
+    Sales / expenses / stock-in are limited to the period; inventory value is a
+    point-in-time snapshot. Every figure respects ``scope`` so branch members
+    only ever see their own units.
+    """
+    p = "custom" if (start and end) else period
+    s_dt, e_dt = _date_range(p, year=year, month=month, start=start, end=end)
+
+    if group_by == "department":
+        key = lambda M: M.department_id  # noqa: E731
+        label_rows = db.query(Department.id, Department.name, Branch.name, Department.branch_id).join(
+            Branch, Branch.id == Department.branch_id
+        ).filter(Department.organization_id == organization_id, Department.deleted == False)  # noqa: E712
+        if scope and scope.branch_id:
+            label_rows = label_rows.filter(Department.branch_id == scope.branch_id)
+        labels = {r[0]: {"name": r[1], "branch_name": r[2], "branch_id": str(r[3])} for r in label_rows.all()}
+        dept_branch = {r[0]: r[3] for r in label_rows.all()}
+    else:
+        group_by = "branch"
+        key = lambda M: M.branch_id  # noqa: E731
+        label_rows = db.query(Branch.id, Branch.name, Branch.code, Branch.is_active).filter(
+            Branch.organization_id == organization_id, Branch.deleted == False  # noqa: E712
+        )
+        labels = {r[0]: {"name": r[1], "code": r[2], "is_active": r[3]} for r in label_rows.all()}
+
+    def _q(model, *cols):
+        q = db.query(key(model), *cols).filter(model.organization_id == organization_id, model.deleted == False)  # noqa: E712
+        q = apply_scope(q, model, scope)
+        return q
+
+    sales = {
+        r[0]: r for r in _q(
+            Sales, func.coalesce(func.sum(Sales.total_price), 0), func.coalesce(func.sum(Sales.profit), 0),
+            func.coalesce(func.sum(Sales.qty_sold), 0), func.count(Sales.id),
+        ).filter(Sales.sale_date >= s_dt, Sales.sale_date < e_dt).group_by(key(Sales)).all()
+    }
+    expenses = {
+        r[0]: r for r in _q(Expenses, func.coalesce(func.sum(Expenses.cost), 0))
+        .filter(Expenses.created_at >= s_dt, Expenses.created_at < e_dt).group_by(key(Expenses)).all()
+    }
+    stock_in = {
+        r[0]: r for r in _q(StockHistory, func.coalesce(func.sum(StockHistory.quantity_in), 0))
+        .filter(StockHistory.date_in >= s_dt, StockHistory.date_in < e_dt,
+                StockHistory.is_reversal == False).group_by(key(StockHistory)).all()  # noqa: E712
+    }
+    inventory = {
+        r[0]: r for r in _q(
+            Items, func.count(Items.id), func.coalesce(func.sum(Items.in_stock), 0),
+            func.coalesce(func.sum(func.coalesce(Items.c_price, 0) * Items.in_stock), 0),
+            func.coalesce(func.sum(Items.s_price * Items.in_stock), 0),
+        ).group_by(key(Items)).all()
+    }
+
+    ids = set(sales) | set(expenses) | set(stock_in) | set(inventory)
+    # include every visible branch/department even if it had no activity
+    if scope is None or scope.grants is None:
+        ids |= set(labels)
+    else:
+        allowed_b = {g[0] for g in scope.grants}
+        if group_by == "branch":
+            ids |= {lid for lid in labels if lid in allowed_b}
+        else:
+            for lid in labels:
+                for gb, gd in scope.grants:
+                    if dept_branch.get(lid) == gb and gd in (None, lid):
+                        ids.add(lid)
+    if scope is not None and scope.branch_id and group_by == "branch":
+        ids = {i for i in ids if i == scope.branch_id}
+
+    rows, tot = [], {
+        "total_revenue": 0.0, "gross_profit": 0.0, "total_expenses": 0.0, "net_profit": 0.0,
+        "units_sold": 0, "transactions": 0, "stock_in": 0, "products": 0, "current_stock": 0,
+        "inventory_value_cost": 0.0, "inventory_value_retail": 0.0,
+    }
+    for gid in ids:
+        sr, er, tr, ir = sales.get(gid), expenses.get(gid), stock_in.get(gid), inventory.get(gid)
+        revenue = float(sr[1]) if sr else 0.0
+        profit = float(sr[2]) if sr else 0.0
+        exp = float(er[1]) if er else 0.0
+        meta = labels.get(gid, {"name": "No department" if group_by == "department" else "Unassigned"})
+        row = {
+            "id": str(gid) if gid else None,
+            **meta,
+            "total_revenue": revenue,
+            "gross_profit": profit,
+            "total_expenses": exp,
+            "net_profit": profit - exp,
+            "units_sold": int(sr[3]) if sr else 0,
+            "transactions": int(sr[4]) if sr else 0,
+            "stock_in": int(tr[1]) if tr else 0,
+            "products": int(ir[1]) if ir else 0,
+            "current_stock": int(ir[2]) if ir else 0,
+            "inventory_value_cost": float(ir[3]) if ir else 0.0,
+            "inventory_value_retail": float(ir[4]) if ir else 0.0,
+        }
+        rows.append(row)
+        for k in tot:
+            tot[k] += row[k]
+    rows.sort(key=lambda r: r["total_revenue"], reverse=True)
+    for r in rows:
+        r["revenue_share"] = round(r["total_revenue"] / tot["total_revenue"] * 100, 1) if tot["total_revenue"] else 0.0
+
+    return {
+        "group_by": group_by,
+        "period": p,
+        "start": s_dt.isoformat(),
+        "end": e_dt.isoformat(),
+        "rows": rows,
+        "totals": tot,
+    }

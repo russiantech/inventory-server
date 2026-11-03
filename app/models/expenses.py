@@ -28,6 +28,16 @@ class Expenses(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     
     organization = relationship("Organization", back_populates="expenses")
+
+    # ── BRANCH / DEPARTMENT SCOPING (nullable for rolling deploys; the app layer always sets them) ──
+    branch_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    department_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    branch = relationship("Branch", foreign_keys=[branch_id])
+    department = relationship("Department", foreign_keys=[department_id])
     recorded_by: Mapped[Optional["User"]] = relationship(
         "User", back_populates="expenses", foreign_keys=[user_id]
     )
@@ -37,6 +47,10 @@ class Expenses(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
             "id": str(self.id),
             "cost": float(self.cost),
             "dept": self.dept,
+            "branch_id": str(self.branch_id) if self.branch_id else None,
+            "branch_name": self.branch.name if self.branch else None,
+            "department_id": str(self.department_id) if self.department_id else None,
+            "department_name": self.department.name if self.department else None,
             "comment": self.comment,
             "expense_date": self.expense_date.isoformat() if self.expense_date else None,
             "user_id": str(self.user_id) if self.user_id else None,

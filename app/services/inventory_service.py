@@ -10,14 +10,37 @@ from app.models.stock_edit_log import StockEditLog
 from app.models.sales import Sales
 from app.models.expenses import Expenses
 from app.models.category import Category
+from app.models.branch import Department
+from app.services.scope_service import ScopeFilter, apply_scope
 
 logger = logging.getLogger(__name__)
 
 
+def _get_department(db: Session, department_id, branch_id, organization_id) -> Optional[Department]:
+    """Fetch a department and verify it belongs to the given branch/org."""
+    if not department_id:
+        return None
+    dept = db.query(Department).filter(
+        Department.id == department_id, Department.deleted == False,  # noqa: E712
+    ).first()
+    if not dept or str(dept.organization_id) != str(organization_id) or str(dept.branch_id) != str(branch_id):
+        raise ValueError("Department does not belong to this branch.")
+    return dept
+
+
+def _validate_category_for_branch(db: Session, category_id, branch_id, organization_id) -> Category:
+    cat = get_category(db, str(category_id), organization_id=organization_id)
+    if not cat:
+        raise ValueError("Category not found.")
+    if cat.branch_id is not None and str(cat.branch_id) != str(branch_id):
+        raise ValueError("This category belongs to a different branch.")
+    return cat
+
+
 # ─── Categories ──────────────────────────────────────────────────────────────
 
-def get_categories(db: Session, dept: str = None, organization_id: str = None) -> List[Category]:
-    q = db.query(Category).filter(Category.deleted == False)
+def get_categories(db: Session, dept: str = None, organization_id: str = None, scope: Optional[ScopeFilter] = None) -> List[Category]:
+    q = apply_scope(db.query(Category).filter(Category.deleted == False), Category, scope)
     if dept:
         q = q.filter(Category.dept == dept)
     if organization_id:
@@ -25,8 +48,8 @@ def get_categories(db: Session, dept: str = None, organization_id: str = None) -
     return q.order_by(Category.name).all()
 
 
-def get_category(db: Session, category_id: str, organization_id: str = None) -> Optional[Category]:
-    q = db.query(Category).filter(Category.id == category_id, Category.deleted == False)
+def get_category(db: Session, category_id: str, organization_id: str = None, scope: Optional[ScopeFilter] = None) -> Optional[Category]:
+    q = apply_scope(db.query(Category).filter(Category.id == category_id, Category.deleted == False), Category, scope)
     if organization_id:
         q = q.filter(Category.organization_id == organization_id)
     return q.first()
@@ -37,15 +60,26 @@ def create_category(
     data,
     user_id=None,
     organization_id: str = None,
+    branch_id=None,
+    department_id=None,
 ) -> Category:
     name = (data.name or "").strip()
 
     if not name:
         raise ValueError("Category name is required")
 
+    dept_row = _get_department(db, department_id, branch_id, organization_id)
+
+    if data.parent_id:
+        parent = get_category(db, str(data.parent_id), organization_id=organization_id)
+        if not parent or (branch_id and parent.branch_id and str(parent.branch_id) != str(branch_id)):
+            raise ValueError("Parent category must belong to the same branch.")
+
     cat = Category(
         name=name,
-        dept=data.dept or "general",
+        dept=dept_row.name if dept_row else (data.dept or "general"),
+        branch_id=branch_id,
+        department_id=department_id,
         desc=data.desc,
         parent_id=data.parent_id,
         user_id=user_id,
@@ -87,10 +121,20 @@ def update_category(
     ):
         raise ValueError("Category does not belong to this organization.")
 
-    allowed_fields = {"name", "desc", "dept", "parent_id"}
+    allowed_fields = {"name", "desc", "dept", "parent_id", "department_id"}
+
+    if data.get("department_id"):
+        dept_row = _get_department(db, data["department_id"], cat.branch_id, cat.organization_id)
+        cat.department_id = dept_row.id
+        cat.dept = dept_row.name
+        data = {k: v for k, v in data.items() if k not in ("department_id", "dept")}
+    if data.get("parent_id"):
+        parent = get_category(db, str(data["parent_id"]), organization_id=cat.organization_id)
+        if not parent or (cat.branch_id and parent.branch_id and str(parent.branch_id) != str(cat.branch_id)):
+            raise ValueError("Parent category must belong to the same branch.")
 
     for k, v in data.items():
-        if k not in allowed_fields:
+        if k not in allowed_fields or k == "department_id":
             continue
 
         if k == "parent_id":
@@ -113,8 +157,8 @@ def delete_category(db: Session, cat: Category, organization_id: str = None) -> 
 
 # ─── Items ───────────────────────────────────────────────────────────────────
 
-def get_items(db: Session, dept: str = None, category_id=None, search: str = None, organization_id: str = None) -> List[Items]:
-    q = db.query(Items).filter(Items.deleted == False)
+def get_items(db: Session, dept: str = None, category_id=None, search: str = None, organization_id: str = None, scope: Optional[ScopeFilter] = None) -> List[Items]:
+    q = apply_scope(db.query(Items).filter(Items.deleted == False), Items, scope)
     if dept:
         q = q.filter(Items.dept == dept)
     if category_id:
@@ -126,14 +170,14 @@ def get_items(db: Session, dept: str = None, category_id=None, search: str = Non
     return q.order_by(Items.name).all()
 
 
-def get_item(db: Session, item_id: str, organization_id: str = None) -> Optional[Items]:
-    q = db.query(Items).filter(Items.id == item_id, Items.deleted == False)
+def get_item(db: Session, item_id: str, organization_id: str = None, scope: Optional[ScopeFilter] = None) -> Optional[Items]:
+    q = apply_scope(db.query(Items).filter(Items.id == item_id, Items.deleted == False), Items, scope)
     if organization_id:
         q = q.filter(Items.organization_id == organization_id)
     return q.first()
 
 
-def create_item(db: Session, data: dict, user_id=None, organization_id: str = None) -> Items:
+def create_item(db: Session, data: dict, user_id=None, organization_id: str = None, branch_id=None, department_id=None) -> Items:
     initial = data.pop("initial_stock", data.pop("in_stock", 0)) or 0
 
     # Allowed fields only (STRICT) — prevents unexpected/unknown keys from
@@ -144,12 +188,24 @@ def create_item(db: Session, data: dict, user_id=None, organization_id: str = No
     }
     clean_data = {k: v for k, v in data.items() if k in allowed_fields}
 
+    # ── Branch / department integrity ──
+    if clean_data.get("category_id"):
+        cat = _validate_category_for_branch(db, clean_data["category_id"], branch_id, organization_id)
+        # inherit the category's department when none was chosen
+        if department_id is None and cat.department_id:
+            department_id = cat.department_id
+    dept_row = _get_department(db, department_id, branch_id, organization_id)
+    if dept_row:
+        clean_data["dept"] = dept_row.name
+
     item = Items(
         **clean_data,
         initial_stock=initial,
         in_stock=initial,
         user_id=user_id,
         organization_id=organization_id,
+        branch_id=branch_id,
+        department_id=department_id,
     )
     db.add(item)
     db.flush()
@@ -163,6 +219,8 @@ def create_item(db: Session, data: dict, user_id=None, organization_id: str = No
             stock_after=initial,
             desc="Initial stock entry",
             organization_id=organization_id,
+            branch_id=branch_id,
+            department_id=department_id,
         )
         db.add(entry)
 
@@ -197,6 +255,18 @@ def update_item(
         "photos",
         "status",
     }
+
+    # branch_id is deliberately NOT updatable: an item's stock ledger lives in its branch.
+    if data.get("category_id"):
+        _validate_category_for_branch(db, data["category_id"], item.branch_id, item.organization_id)
+    if data.get("department_id"):
+        dept_row = _get_department(db, data["department_id"], item.branch_id, item.organization_id)
+        item.department_id = dept_row.id
+        item.dept = dept_row.name
+        # keep the item's ledgers on the same department
+        db.query(Sales).filter(Sales.item_id == item.id).update({Sales.department_id: dept_row.id, Sales.dept: dept_row.name}, synchronize_session=False)
+        db.query(StockHistory).filter(StockHistory.item_id == item.id).update({StockHistory.department_id: dept_row.id}, synchronize_session=False)
+        data = {k: v for k, v in data.items() if k != "dept"}
 
     for key, value in data.items():
         if key not in allowed_fields:
@@ -278,6 +348,8 @@ def stock_in(db: Session, item_id, quantity_in: int, user_id=None, desc: str = N
         desc=desc or f"+{quantity_in} units added",
         reference=reference,
         organization_id=organization_id,
+        branch_id=item.branch_id,
+        department_id=item.department_id,
     )
     db.add(entry)
     db.commit()
@@ -286,10 +358,10 @@ def stock_in(db: Session, item_id, quantity_in: int, user_id=None, desc: str = N
     return entry
 
 
-def get_stock_history(db: Session, item_id=None, organization_id: str = None) -> List[StockHistory]:
+def get_stock_history(db: Session, item_id=None, organization_id: str = None, scope: Optional[ScopeFilter] = None) -> List[StockHistory]:
     """Full (unbounded) history list. Used by item_stock_history for the
     'total_received' sum, and by /history via PageSerializer."""
-    q = db.query(StockHistory).filter(StockHistory.deleted == False)
+    q = apply_scope(db.query(StockHistory).filter(StockHistory.deleted == False), StockHistory, scope)
     if item_id:
         q = q.filter(StockHistory.item_id == item_id)
     if organization_id:
@@ -307,9 +379,10 @@ def update_stock_entry(
     desc: str = None,
     reference: str = None,
     user_id=None,
+    scope: Optional[ScopeFilter] = None,
 ) -> Optional[StockHistory]:
     entry = (
-        db.query(StockHistory)
+        apply_scope(db.query(StockHistory), StockHistory, scope)
         .filter(
             StockHistory.id == stock_id,
             StockHistory.organization_id == organization_id,
@@ -405,6 +478,7 @@ def get_stock_edit_logs(
     organization_id: str,
     page: int = 1,
     page_size: int = 20,
+    scope: Optional[ScopeFilter] = None,
 ):
     """DB-level paginated, most-recent-first edit history for one stock entry."""
     page = max(page, 1)
@@ -414,6 +488,10 @@ def get_stock_edit_logs(
         StockEditLog.stock_entry_id == stock_id,
         StockEditLog.organization_id == organization_id,
     )
+    if scope is not None:
+        # edit logs inherit the branch of their stock entry
+        visible = apply_scope(db.query(StockHistory.id), StockHistory, scope).subquery()
+        base_q = base_q.filter(StockEditLog.stock_entry_id.in_(visible))
     total = base_q.count()
     logs = (
         base_q
@@ -431,9 +509,10 @@ def reverse_stock_entry(
     organization_id: str,
     reason: str,
     user_id=None,
+    scope: Optional[ScopeFilter] = None,
 ) -> Optional[StockHistory]:
     entry = (
-        db.query(StockHistory)
+        apply_scope(db.query(StockHistory), StockHistory, scope)
         .filter(
             StockHistory.id == stock_id,
             StockHistory.organization_id == organization_id,
@@ -475,6 +554,8 @@ def reverse_stock_entry(
         is_reversal=True,
         reversed_entry_id=entry.id,
         organization_id=organization_id,
+        branch_id=entry.branch_id,
+        department_id=entry.department_id,
     )
     entry.is_reversed = True
 
@@ -487,8 +568,8 @@ def reverse_stock_entry(
 
 # ─── Sales ───────────────────────────────────────────────────────────────────
 
-def get_sales(db: Session, item_id=None, dept: str = None, user_id=None, organization_id: str = None) -> List[Sales]:
-    q = db.query(Sales).filter(Sales.deleted == False)
+def get_sales(db: Session, item_id=None, dept: str = None, user_id=None, organization_id: str = None, scope: Optional[ScopeFilter] = None) -> List[Sales]:
+    q = apply_scope(db.query(Sales).filter(Sales.deleted == False), Sales, scope)
     if item_id:
         q = q.filter(Sales.item_id == item_id)
     if dept:
@@ -507,8 +588,9 @@ def get_sale(
     db: Session,
     sale_id,
     organization_id: str = None,
+    scope: Optional[ScopeFilter] = None,
 ) -> Optional[Sales]:
-    q = db.query(Sales).filter(
+    q = apply_scope(db.query(Sales), Sales, scope).filter(
         Sales.id == sale_id,
         Sales.deleted == False,
     )
@@ -543,9 +625,12 @@ def create_sale(db: Session, item_id, qty_sold: int, unit_price: float, user_id=
         profit=profit,
         stock_before=stock_before,
         stock_after=stock_after,
-        dept=dept or item.dept,
+        # Branch/department always come from the item (never from the client)
+        dept=item.dept if item.department_id else (dept or item.dept),
         comment=comment,
         organization_id=organization_id,
+        branch_id=item.branch_id,
+        department_id=item.department_id,
     )
     db.add(sale)
     db.commit()
@@ -589,8 +674,8 @@ def void_sale(
 
 # ─── Expenses ────────────────────────────────────────────────────────────────
 
-def get_expenses(db: Session, dept: str = None, organization_id: str = None) -> List[Expenses]:
-    q = db.query(Expenses).filter(Expenses.deleted == False)
+def get_expenses(db: Session, dept: str = None, organization_id: str = None, scope: Optional[ScopeFilter] = None) -> List[Expenses]:
+    q = apply_scope(db.query(Expenses).filter(Expenses.deleted == False), Expenses, scope)
     if dept:
         q = q.filter(Expenses.dept == dept)
     if organization_id:
@@ -598,8 +683,12 @@ def get_expenses(db: Session, dept: str = None, organization_id: str = None) -> 
     return q.order_by(desc(Expenses.created_at)).all()
 
 
-def create_expense(db: Session, cost: float, dept: str = "general", comment: str = None, user_id=None, organization_id: str = None) -> Expenses:
-    exp = Expenses(cost=cost, dept=dept, comment=comment, user_id=user_id, organization_id=organization_id)
+def create_expense(db: Session, cost: float, dept: str = "general", comment: str = None, user_id=None, organization_id: str = None, branch_id=None, department_id=None) -> Expenses:
+    dept_row = _get_department(db, department_id, branch_id, organization_id)
+    exp = Expenses(
+        cost=cost, dept=dept_row.name if dept_row else dept, comment=comment, user_id=user_id,
+        organization_id=organization_id, branch_id=branch_id, department_id=department_id,
+    )
     db.add(exp)
     db.commit()
     db.refresh(exp)

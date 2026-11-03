@@ -119,6 +119,16 @@ class StockHistory(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
         index=True,
     )
     organization = relationship("Organization", back_populates="stock_history")
+
+    # ── BRANCH / DEPARTMENT SCOPING (nullable for rolling deploys; the app layer always sets them) ──
+    branch_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    department_id: Mapped[Optional[UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departments.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    branch = relationship("Branch", foreign_keys=[branch_id])
+    department = relationship("Department", foreign_keys=[department_id])
     
     # edit_logs: Mapped[List["StockEditLog"]] = relationship(
     #     "StockEditLog",
@@ -155,6 +165,10 @@ class StockHistory(UUIDMixin, TimestampMixin, SoftDeleteMixin, Base):
             "reversed_entry_id": str(self.reversed_entry_id) if self.reversed_entry_id else None,
             "edit_count": self.edit_count,
             "organization_id": str(self.organization_id),
+            "branch_id": str(self.branch_id) if self.branch_id else None,
+            "branch_name": self.branch.name if self.branch else None,
+            "department_id": str(self.department_id) if self.department_id else None,
+            "department_name": self.department.name if self.department else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 

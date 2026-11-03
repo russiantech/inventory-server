@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from app.api.deps.users import _get_org_id, get_db, get_current_user
 from app.api.deps.rbac import require_roles
 from app.models.user import User
+from app.api.deps.scope import get_access_scope, get_scope_filter, scope_error_response
+from app.services.scope_service import AccessScope, ScopeFilter, ScopeError
 from app.services import inventory_service
 from app.schemas.stock import (
     StockInSchema, StockReverseSchema,
@@ -22,12 +24,13 @@ async def record_stock_in(
     data: StockInSchema,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "super_admin", "manager", "staff")),
+    scope: AccessScope = Depends(get_access_scope),
 ):
     org_id = _get_org_id(current_user)
 
-    # Verify the item exists and belongs to this organisation
-    item = inventory_service.get_item(db, data.item_id)
-    if not item or str(item.organization_id) != org_id:
+    # Verify the item exists, belongs to this organisation AND the caller's branch scope
+    item = inventory_service.get_item(db, data.item_id, organization_id=org_id)
+    if not item or not scope.can_access(item.branch_id, item.department_id):
         return api_response(False, "Item not found.", status_code=404)
 
     try:
@@ -57,6 +60,7 @@ async def update_stock_entry(
     data: StockUpdateSchema,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "super_admin", "manager", "staff")),
+    sf: ScopeFilter = Depends(get_scope_filter),
 ):
     org_id = _get_org_id(current_user)
     try:
@@ -70,6 +74,7 @@ async def update_stock_entry(
             desc=data.desc,
             reference=data.reference,
             user_id=current_user.id,
+            scope=sf,
         )
         if not entry:
             return api_response(False, "Stock entry not found.", status_code=404)
@@ -85,10 +90,11 @@ async def stock_entry_edit_logs(
     page_size: int = 20,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    sf: ScopeFilter = Depends(get_scope_filter),
 ):
     org_id = _get_org_id(current_user)
     logs, total, page, page_size = inventory_service.get_stock_edit_logs(
-        db, stock_id=stock_id, organization_id=org_id, page=page, page_size=page_size
+        db, stock_id=stock_id, organization_id=org_id, page=page, page_size=page_size, scope=sf
     )
     return api_response(
         True, "Edit logs fetched.",
@@ -110,6 +116,7 @@ async def reverse_stock_entry(
     data: StockReverseSchema,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "super_admin", "manager", "staff")),
+    sf: ScopeFilter = Depends(get_scope_filter),
 ):
     org_id = _get_org_id(current_user)
     try:
@@ -119,6 +126,7 @@ async def reverse_stock_entry(
             organization_id=org_id,
             reason=data.reason,
             user_id=current_user.id,
+            scope=sf,
         )
         if not reversal:
             return api_response(False, "Stock entry not found.", status_code=404)
@@ -133,9 +141,10 @@ async def list_stock_history(
     item_id: str = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    sf: ScopeFilter = Depends(get_scope_filter),
 ):
     org_id = _get_org_id(current_user)
-    history = inventory_service.get_stock_history(db, item_id=item_id, organization_id=org_id)
+    history = inventory_service.get_stock_history(db, item_id=item_id, organization_id=org_id, scope=sf)
     return PageSerializer(request, obj=history, resource_name="stock_history").get_response("Stock history fetched.")
 
 
@@ -145,13 +154,14 @@ async def item_stock_history(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    sf: ScopeFilter = Depends(get_scope_filter),
 ):
     org_id = _get_org_id(current_user)
-    item = inventory_service.get_item(db, item_id, organization_id=org_id)
+    item = inventory_service.get_item(db, item_id, organization_id=org_id, scope=sf)
     if not item:
         return api_response(False, "Item not found.", status_code=404)
 
-    history = inventory_service.get_stock_history(db, item_id=item_id, organization_id=org_id)
+    history = inventory_service.get_stock_history(db, item_id=item_id, organization_id=org_id, scope=sf)
     return api_response(
         True, f"Stock history for '{item.name}'.",
         data={
@@ -169,9 +179,10 @@ async def stock_snapshot(
     low_stock_only: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    sf: ScopeFilter = Depends(get_scope_filter),
 ):
     org_id = _get_org_id(current_user)
-    items = inventory_service.get_items(db, dept=dept, organization_id=org_id)
+    items = inventory_service.get_items(db, dept=dept, organization_id=org_id, scope=sf)
     if low_stock_only:
         items = [i for i in items if i.in_stock < 5]
 
