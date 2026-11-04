@@ -39,7 +39,9 @@ async def create_category(
     org_id = _get_org_id(current_user)
 
     try:
-        branch_id, department_id = scope.resolve_write_target(db, data.branch_id, data.department_id)
+        branch_id, department_id = scope.resolve_write_target(
+            db, data.branch_id, data.department_id, require_department=True
+        )
         scope.require_role(branch_id, "manager")
     except ScopeError as e:
         return scope_error_response(e)

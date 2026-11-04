@@ -20,9 +20,9 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+# revision = "20261031_branches"
 revision = "20261031_branches"
 down_revision = "a22ffebc3678"
-# down_revision = "REPLACE_WITH_CURRENT_HEAD"
 branch_labels = None
 depends_on = None
 

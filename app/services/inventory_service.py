@@ -194,6 +194,15 @@ def create_item(db: Session, data: dict, user_id=None, organization_id: str = No
         # inherit the category's department when none was chosen
         if department_id is None and cat.department_id:
             department_id = cat.department_id
+    if department_id is None:
+        active = db.query(Department).filter(
+            Department.branch_id == branch_id, Department.deleted == False,  # noqa: E712
+            Department.is_active == True,  # noqa: E712
+        ).all()
+        if len(active) == 1:
+            department_id = active[0].id
+        elif len(active) > 1:
+            raise ValueError("Please choose a department.")
     dept_row = _get_department(db, department_id, branch_id, organization_id)
     if dept_row:
         clean_data["dept"] = dept_row.name

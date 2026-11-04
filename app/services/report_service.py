@@ -756,8 +756,19 @@ def get_report(
     include_expenses: bool = True,
     organization_id: str = None,
     scope: Optional[ScopeFilter] = None,
+    category_id=None,
 ):
     p = "custom" if (start and end) else period
+    category_item_ids = None
+    if category_id:
+        # the category and all of its sub-categories
+        from app.models.category import Category
+        ids, frontier = {category_id}, [category_id]
+        while frontier:
+            kids = [c[0] for c in db.query(Category.id).filter(Category.parent_id.in_(frontier), Category.deleted == False).all()]  # noqa: E712
+            frontier = [k for k in kids if k not in ids]
+            ids.update(frontier)
+        category_item_ids = db.query(Items.id).filter(Items.category_id.in_(ids))
     s_dt, e_dt = _date_range(p, year=year, month=month, start=start, end=end)
 
     # ── Sales ──────────────────────────────────────────────────────────────────
@@ -769,6 +780,8 @@ def get_report(
     )
     if item_id:
         sq = sq.filter(Sales.item_id == item_id)
+    if category_item_ids is not None:
+        sq = sq.filter(Sales.item_id.in_(category_item_ids))
     if dept:
         sq = sq.filter(Sales.dept == dept)
     if organization_id:
@@ -812,6 +825,8 @@ def get_report(
     )
     if item_id:
         stq = stq.filter(StockHistory.item_id == item_id)
+    if category_item_ids is not None:
+        stq = stq.filter(StockHistory.item_id.in_(category_item_ids))
     if organization_id:
         stq = stq.filter(StockHistory.organization_id == organization_id) 
     stq = apply_scope(stq, StockHistory, scope)
@@ -828,6 +843,8 @@ def get_report(
     iq = db.query(Items).filter(Items.deleted == False)
     if item_id:
         iq = iq.filter(Items.id == item_id)
+    if category_item_ids is not None:
+        iq = iq.filter(Items.id.in_(category_item_ids))
     if dept:
         iq = iq.filter(Items.dept == dept)
     if organization_id:
@@ -841,7 +858,8 @@ def get_report(
     # ── Expenses ───────────────────────────────────────────────────────────────
     expenses_rows = []
     total_expenses = 0.0
-    if include_expenses:
+    # Expenses are not tied to a category, so a category view reports product figures only.
+    if include_expenses and category_item_ids is None:
         eq = db.query(Expenses).filter(
             Expenses.deleted == False,
             Expenses.created_at >= s_dt,
@@ -861,7 +879,8 @@ def get_report(
         "period": p,
         "start": s_dt.isoformat(),
         "end": e_dt.isoformat(),
-        "include_expenses": include_expenses,
+        "include_expenses": include_expenses and category_item_ids is None,
+        "expenses_excluded_by_category": category_item_ids is not None,
         "scope": scope.describe() if scope else {"branch_id": None, "department_id": None, "collective": True},
         "summary": {
             "total_revenue": total_revenue,

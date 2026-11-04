@@ -26,6 +26,7 @@ async def report(
     dept: str = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
+    category_id: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     sf: ScopeFilter = Depends(get_scope_filter),
@@ -42,7 +43,10 @@ async def report(
         return api_response(False, f"Invalid period. Choose one of: {', '.join(valid_periods)}", status_code=400)
 
     org_id = _get_org_id(current_user)
-    data = get_report(db, period=period, year=year, month=month, start=start, end=end, item_id=item_id, dept=dept, organization_id=org_id, scope=sf)
+    if category_id:
+        if not inventory_service.get_category(db, category_id, organization_id=org_id, scope=sf):
+            return api_response(False, "Category not found.", status_code=404)
+    data = get_report(db, period=period, year=year, month=month, start=start, end=end, item_id=item_id, dept=dept, organization_id=org_id, scope=sf, category_id=category_id)
     return api_response(True, f"{period.capitalize()} report generated.", data=data)
 
 

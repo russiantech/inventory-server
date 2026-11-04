@@ -211,8 +211,17 @@ class AccessScope:
         self._assert_branch_in_org(db, b, must_be_active=True)
         if d is not None:
             self._assert_department_in_branch(db, d, b, must_be_active=True)
-        elif require_department:
-            raise ScopeError("Please choose a department.", 400)
+        else:
+            # Departments come from one source (the branch's department list).
+            # A branch with exactly one active department selects it automatically.
+            active = db.query(Department.id).filter(
+                Department.branch_id == b, Department.organization_id == self.organization_id,
+                Department.deleted == False, Department.is_active == True,  # noqa: E712
+            ).all()
+            if len(active) == 1:
+                d = active[0][0]
+            elif require_department and len(active) > 1:
+                raise ScopeError("Please choose a department.", 400)
 
         if not self.can_access(b, d):
             raise ScopeError("You do not have access to this branch or department.")
